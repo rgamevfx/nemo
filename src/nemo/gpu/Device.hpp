@@ -112,6 +112,8 @@ public:
     // Format — each exactly when reported here — because native effect
     // kernels (issue #8) read/write storage images whose format Slang emits
     // as Unknown. The effect executor refuses to run when either is absent.
+    // Source storage-plane formats and BC texture compression are likewise
+    // enabled when supported; their consumers validate the exact format usage.
     [[nodiscard]] const VkPhysicalDeviceFeatures& features() const { return features_; }
     [[nodiscard]] bool hostQueryResetEnabled() const { return host_query_reset_; }
 

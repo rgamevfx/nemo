@@ -1,0 +1,13 @@
+{
+    "color_a": "2",
+    "color_b": "3",
+    "destination_a": 2,
+    "destination_b": 2,
+    "device_pixel_ratio": 1,
+    "panel_a": "panel-a",
+    "panel_b": "panel-b",
+    "platform": "wayland",
+    "qt": "6.4.2",
+    "window_height": 640,
+    "window_width": 800
+}

@@ -42,13 +42,11 @@ if(NEMO_BUILD_GPU)
     target_compile_definitions(nemo_color_tests PRIVATE
         NEMO_CHANNEL_FIXTURE_DIR="${PROJECT_SOURCE_DIR}/docs/evidence/assets/issue90-channels")
 
-    # HwMedia* tests (issue #10): hardware decode interop and the codec
-    # sweep harness. Vulkan video decode requires the application device;
-    # the mediaConvert SPIR-V comes from the nemo_shaders target.
+    # Hardware/source decode and media-import checks. The source conversion
+    # shader comes from the nemo_shaders target.
     add_executable(nemo_hwmedia_tests
         HwMediaTests.cpp
         MediaDecodeTests.cpp
-        MediaEncodeTests.cpp
         MediaImportTests.cpp
     )
     target_link_libraries(nemo_hwmedia_tests PRIVATE nemo::media nemo::gpu GTest::gtest_main)

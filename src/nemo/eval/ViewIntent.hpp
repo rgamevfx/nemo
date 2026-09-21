@@ -172,4 +172,18 @@ struct ResolvedView {
 [[nodiscard]] ResolvedView resolveViewIntent(const ViewIntent& intent, const ImageDescription& description,
                                              ViewerResolutionPolicy& resolution);
 
+// The SAME demand arithmetic at an ALREADY DECIDED sampling density, and
+// therefore without the panel's hysteresis state. It exists so a validated
+// representation of a frame can be checked against a view the panel states
+// later: a frame first visited through the concrete-request path is already the
+// frame an equivalent view asks for, and resolving that view against the
+// frame's own stored description at the representation's own density is a pure
+// computation — no graph description, no planning, no evaluation. Everything a
+// representation must agree on travels here: coverage, region, demanded
+// channels and the presentation-only isolation. `resolveViewIntent` is exactly
+// "decide the density with the policy, then resolve the demand at it", so both
+// share one owner and can never disagree.
+[[nodiscard]] ResolvedView resolveViewDemand(const ViewIntent& intent, const ImageDescription& description,
+                                             int samplingScale);
+
 }  // namespace nemo::eval

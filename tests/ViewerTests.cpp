@@ -56,6 +56,7 @@ extern "C" {
 #include "nemo/eval/SourceSession.hpp"
 #include "nemo/eval/Viewer.hpp"
 #include "nemo/gpu/Allocator.hpp"
+#include "nemo/gpu/Compile.hpp"
 #include "nemo/gpu/ComputePass.hpp"
 #include "nemo/gpu/Device.hpp"
 #include "nemo/gpu/Error.hpp"
@@ -442,18 +443,159 @@ struct CacheDirectory {
     [[nodiscard]] eval::ViewerCacheOptions options() const {
         eval::ViewerCacheOptions result;
         result.directory = path;
-        result.encoding.codec = "libx264-cpu";
-        result.chunkFrames = 3;
         return result;
     }
 };
 
+// Reads the display pixels of a LIVE viewer frame: the executed,
+// display-referred float image the graph produced.
 CpuImage readViewerFrame(const eval::ViewerFrame& frame, const Bootstrap& boot) {
     CpuImage pixels(frame.layout);
     gpu::downloadImage(boot.device->submissions(boot.device->graphics_family()), *boot.allocator, *frame.image,
                        pixels.data(), static_cast<std::size_t>(pixels.width()) * pixels.height() * 4 * sizeof(float),
                        10'000'000'000ULL);
     return pixels;
+}
+
+// Samples a REPLAY frame the way a panel does (issue #106): one direct
+// BC7-to-shared-RGBA8 pass on a second logical device, then a diagnostic
+// readback of that output. Nothing here reconstructs a float frame, so these
+// pixels are the display representation replay really delivers.
+struct ReplayReader {
+    gpu::Device* producer;
+    std::unique_ptr<gpu::Device> consumer;
+    std::unique_ptr<gpu::Allocator> allocator;
+    explicit ReplayReader(const Bootstrap& boot) : producer(boot.device.get()) {
+        consumer = gpu::Device::create(*boot.instance, {.externalSharing = true, .physical = boot.device->physical()});
+        allocator = gpu::Allocator::create(*boot.instance, *consumer, {.max_device_bytes = 64u << 20});
+    }
+    ~ReplayReader() {
+        // Asynchronous producer submissions may still own imported image views.
+        // Retire them before destroying this diagnostic consumer device.
+        producer->submissions(producer->graphics_family()).drain();
+    }
+
+    [[nodiscard]] CpuImage present(const eval::ViewerFrame& frame, const Bootstrap& boot) const {
+        if (!frame.replay)
+            throw std::runtime_error("replay readback: frame carries no compressed replay image");
+        return present(*frame.replay, frame.layout, frame.presentationChannel, boot);
+    }
+
+    [[nodiscard]] CpuImage present(const gpu::Bc7Image& image, const ImageLayout& layout, gpu::ViewerChannel channel,
+                                   const Bootstrap& boot) const {
+        const std::vector<std::uint32_t> spirv = loadSpirv(slangSpvDir() / "viewerPresentationBc7.spv");
+        return readBack(gpu::prepareViewerPresentation(*boot.device, *boot.allocator, *consumer, image, spirv, channel),
+                        layout);
+    }
+
+    // The LIVE counterpart of the same presentation, so a replay can be
+    // compared against exactly what the live frame presents.
+    [[nodiscard]] CpuImage presentLive(const eval::ViewerFrame& frame, const Bootstrap& boot) const {
+        if (!frame.image)
+            throw std::runtime_error("live readback: frame carries no live float image");
+        const std::vector<std::uint32_t> spirv = loadSpirv(slangSpvDir() / "viewerPresentation.spv");
+        return readBack(gpu::prepareViewerPresentation(*boot.device, *boot.allocator, *consumer, *frame.image,
+                                                       ColorInterpretation::DisplayReferred, spirv,
+                                                       frame.presentationChannel),
+                        frame.layout);
+    }
+
+private:
+    [[nodiscard]] CpuImage readBack(const gpu::ViewerPresentation& presented, const ImageLayout& layout) const {
+        auto& queue = consumer->submissions(consumer->graphics_family());
+        queue.submit_and_wait(
+            [&](VkCommandBuffer command) {
+                gpu::acquireViewerPresentation(*consumer, presented, command);
+                gpu::recordImageBarrier(command, presented.image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                        VK_IMAGE_LAYOUT_GENERAL, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                                        VK_ACCESS_SHADER_READ_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                        VK_ACCESS_TRANSFER_READ_BIT);
+            },
+            10'000'000'000ULL);
+        const int width = layout.width;
+        const int height = layout.height;
+        std::vector<std::uint8_t> bytes(static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * 4);
+        gpu::downloadImage(queue, *allocator, presented.image, bytes.data(), bytes.size(), 10'000'000'000ULL);
+        // The presented output IS the display frame: its 8-bit samples are the
+        // live display values, so the comparison against a live frame is the
+        // BC7 loss plus one quantization step, never a reconstructed float.
+        CpuImage pixels(layout);
+        for (int y = 0; y < height; ++y) {
+            for (int x = 0; x < width; ++x) {
+                const std::size_t at = (static_cast<std::size_t>(y) * width + x) * 4;
+                pixels.setPixel(x, y,
+                                {static_cast<float>(bytes[at]) / 255.0F, static_cast<float>(bytes[at + 1]) / 255.0F,
+                                 static_cast<float>(bytes[at + 2]) / 255.0F,
+                                 static_cast<float>(bytes[at + 3]) / 255.0F});
+            }
+        }
+        return pixels;
+    }
+};
+
+// The asynchronous cache contract (issue #106) at the two seams these tests
+// use: a representation this cache already accepted is Loading while its read
+// and upload are admitted, and the caller RETRIES it — it is never a miss, and
+// a live render is never the answer for it. These drive exactly that retry and
+// give up on a deadline instead of hanging.
+[[nodiscard]] eval::ViewerCacheLookup awaitReady(eval::ViewerCache& cache, const std::string& identity,
+                                                 const std::chrono::seconds timeout = std::chrono::seconds(30)) {
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    for (;;) {
+        const eval::ViewerCacheLookup lookup = cache.lookup(identity);
+        if (lookup.state != eval::ViewerCacheState::Loading || std::chrono::steady_clock::now() >= deadline)
+            return lookup;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+}
+
+// The session-level half: a validated frame whose preparation is still in
+// flight answers ViewerReplayPending, which the caller absorbs by asking for
+// the SAME demand again — never by falling back to the live graph.
+template <typename Demand>
+[[nodiscard]] auto retryWhilePreparing(Demand&& demand, const std::chrono::seconds timeout = std::chrono::seconds(30)) {
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    for (;;) {
+        try {
+            return demand();
+        } catch (const eval::ViewerReplayPending&) {
+            if (std::chrono::steady_clock::now() >= deadline)
+                throw;
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+    }
+}
+
+// The cache's own durable storage under `directory`: every non-empty regular
+// file it owns, whatever it names them (the empty writer-lock file is not
+// storage). The byte total is the PHYSICAL footprint the configured disk
+// budget bounds, pack headers and not-yet-reclaimed records included.
+[[nodiscard]] std::vector<std::filesystem::path> cacheStorageFiles(const std::filesystem::path& directory) {
+    std::vector<std::filesystem::path> files;
+    std::error_code error;
+    for (const auto& entry : std::filesystem::recursive_directory_iterator(directory, error)) {
+        if (error)
+            break;
+        std::error_code typeError;
+        if (!entry.is_regular_file(typeError) || typeError)
+            continue;
+        std::error_code sizeError;
+        const auto size = std::filesystem::file_size(entry.path(), sizeError);
+        if (!sizeError && size > 0)
+            files.push_back(entry.path());
+    }
+    return files;
+}
+
+[[nodiscard]] std::uint64_t physicalCacheBytes(const std::filesystem::path& directory) {
+    std::uint64_t total = 0;
+    for (const auto& file : cacheStorageFiles(directory)) {
+        std::error_code error;
+        const auto size = std::filesystem::file_size(file, error);
+        if (!error)
+            total += size;
+    }
+    return total;
 }
 
 // ---------------------------------------------------------------------------
@@ -819,8 +961,9 @@ TEST(Viewer, ViewerRenderAppliesTransformOnceAndMatchesCpuOcio) {
 TEST(Viewer, PresentationQuantizesExactlyOnceWithoutTransfer) {
     const Bootstrap boot = createBootstrap({.externalSharing = true});
     NEMO_SKIP_UNLESS_SLANG(boot);
-    auto consumer = gpu::Device::create(*boot.instance, {.externalSharing = true, .physical = boot.device->physical()});
-    auto consumerAllocator = gpu::Allocator::create(*boot.instance, *consumer, {.max_device_bytes = 16u << 20});
+    const ReplayReader reader(boot);
+    const auto& consumer = reader.consumer;
+    const auto& consumerAllocator = reader.allocator;
     auto& consumerQueue = consumer->submissions(consumer->graphics_family());
 
     const std::vector<std::uint32_t> spirv = loadSpirv(slangSpvDir() / "viewerPresentation.spv");
@@ -871,8 +1014,9 @@ TEST(Viewer, PresentationQuantizesExactlyOnceWithoutTransfer) {
 TEST(Viewer, PresentationIsolatesDisplayChannels) {
     const Bootstrap boot = createBootstrap({.externalSharing = true});
     NEMO_SKIP_UNLESS_SLANG(boot);
-    auto consumer = gpu::Device::create(*boot.instance, {.externalSharing = true, .physical = boot.device->physical()});
-    auto consumerAllocator = gpu::Allocator::create(*boot.instance, *consumer, {.max_device_bytes = 16u << 20});
+    const ReplayReader reader(boot);
+    const auto& consumer = reader.consumer;
+    const auto& consumerAllocator = reader.allocator;
     auto& consumerQueue = consumer->submissions(consumer->graphics_family());
 
     const std::vector<std::uint32_t> spirv = loadSpirv(slangSpvDir() / "viewerPresentation.spv");
@@ -1739,35 +1883,43 @@ TEST(Interactive, SharedCacheIdentitySurvivesPublicationFromTwoDestinations) {
     const auto composition = makeSourceComposition("plate", SourceReference{clip.path.string()}, false);
     eval::ViewerSession viewer(*boot.instance, *boot.device, *boot.allocator, slangSpvDir());
     const auto frame = viewer.render(composition.doc, requestFor(composition.doc, {0, 0, 64, 48}, 0));
+    ASSERT_TRUE(frame.image);
     CacheDirectory directory;
-    auto options = directory.options();
-    options.chunkFrames = 2;
+    const auto options = directory.options();
     {
-        eval::ViewerCache cache(*boot.instance, *boot.device, *boot.allocator, slangSpvDir() / "mediaConvert.spv");
+        eval::ViewerCache cache(*boot.device, *boot.allocator, slangSpvDir());
         cache.configure(options);
-        eval::ViewerCachePublication publication{.identity = "shared-frame",
-                                                 .chunkGroupKey = "display",
-                                                 .revision = 1,
-                                                 .generation = 1,
-                                                 .image = frame.image,
-                                                 .layout = frame.layout};
-        std::array<eval::ViewerCachePublication, 2> batch{publication, publication};
-        batch[1].destination = eval::ViewerDestination::Cache;
-        ASSERT_TRUE(cache.enqueueBatch(batch));
+        const auto publication = [&](eval::ViewerDestination destination) {
+            return eval::ViewerCachePublication{.identity = "shared-frame",
+                                                .viewingIdentity = "shared-view",
+                                                .localTime = 0,
+                                                .revision = 1,
+                                                .generation = 1,
+                                                .image = frame.image,
+                                                .layout = frame.layout,
+                                                .description = frame.description,
+                                                .request = frame.request,
+                                                .destination = destination};
+        };
+        ASSERT_TRUE(cache.enqueue(publication(eval::ViewerDestination::Interactive)));
+        ASSERT_TRUE(cache.enqueue(publication(eval::ViewerDestination::Cache)));
         cache.flush();
     }
-    eval::ViewerCache reopened(*boot.instance, *boot.device, *boot.allocator, slangSpvDir() / "mediaConvert.spv");
+    eval::ViewerCache reopened(*boot.device, *boot.allocator, slangSpvDir());
     reopened.configure(options);
-    EXPECT_TRUE(reopened.lookup("shared-frame", frame.layout, 5'000'000'000ULL))
-        << "A shared destination identity must not retire its own newly published chunk";
+    const auto lookup = awaitReady(reopened, "shared-frame");
+    EXPECT_EQ(lookup.state, eval::ViewerCacheState::Ready)
+        << "a shared destination identity must not retire its own newly published frame";
+    ASSERT_TRUE(lookup.frame);
     expectValidationClean(*boot.instance);
 }
 
 TEST(ViewerCache, SparseReplaySurvivesReopeningWithoutEvaluationOrDoubleTransform) {
-    const auto boot = createBootstrap();
+    const auto boot = createBootstrap({.externalSharing = true});
     NEMO_SKIP_UNLESS_SLANG(boot);
     const auto configPath = writeColorConfig();
     const test::ScopedEnvironment ocio("OCIO", configPath.string());
+    const ReplayReader reader(boot);
     CacheDirectory directory;
     std::vector<int> levels(31);
     for (int i = 0; i < 31; ++i)
@@ -1781,6 +1933,8 @@ TEST(ViewerCache, SparseReplaySurvivesReopeningWithoutEvaluationOrDoubleTransfor
         for (int number : {10, 20, 30}) {
             auto frame = session.render(composition.doc, requestFor(composition.doc, {0, 0, 64, 48}, number));
             ASSERT_FALSE(frame.cacheHit);
+            ASSERT_TRUE(frame.image);
+            ASSERT_FALSE(frame.replay) << "a live frame is not a compressed replay";
             reference.emplace(number, readViewerFrame(frame, boot));
         }
         session.flushCache();
@@ -1795,16 +1949,24 @@ TEST(ViewerCache, SparseReplaySurvivesReopeningWithoutEvaluationOrDoubleTransfor
         replay.configureCache(directory.options());
         const auto before = replay.reuseCounts();
         for (int number : {30, 10, 20, 30}) {
-            const auto frame = replay.render(composition.doc, requestFor(composition.doc, {0, 0, 64, 48}, number));
+            // A reopened record is prepared asynchronously, so the demand is
+            // retried while it is Loading rather than rendered live.
+            const auto frame = retryWhilePreparing(
+                [&] { return replay.render(composition.doc, requestFor(composition.doc, {0, 0, 64, 48}, number)); });
             ASSERT_TRUE(frame.cacheHit) << number;
-            expectImagesClose(reference.at(number), readViewerFrame(frame, boot), 0.035F,
+            ASSERT_TRUE(frame.replay) << number;
+            EXPECT_FALSE(frame.image) << number << ": a cached frame is never reconstructed as a float image";
+            expectImagesClose(reference.at(number), reader.present(frame, boot), 0.035F,
                               "display-referred compressed replay");
         }
+        // Zero graph work on a known hit: no source decode, no effect
+        // evaluation, and no description/plan round trip.
         EXPECT_EQ(replay.reuseCounts(), before);
-        EXPECT_GT(replay.cacheCounts().decodedHotHits, 0U);
+        EXPECT_GT(replay.cacheCounts().hits, 0U);
         EXPECT_EQ(replay.cacheCounts().encodedFrames, 0U);
         auto unvisited = replay.render(composition.doc, requestFor(composition.doc, {0, 0, 64, 48}, 11));
         EXPECT_FALSE(unvisited.cacheHit);
+        EXPECT_TRUE(unvisited.image);
         replay.flushCache();
         EXPECT_EQ(replay.cacheCounts().published, 1U);
     }
@@ -1860,7 +2022,7 @@ TEST(ViewerCache, ViewEditsPreserveUpstreamReuseAndOnlyReplaceVisitedFrames) {
     expectValidationClean(*boot.instance);
 }
 
-TEST(ViewerCache, StaleRequestsAndFailedMuxesNeverBecomeReplayable) {
+TEST(ViewerCache, StaleAndCorruptFramesNeverBecomeReplayable) {
     const auto boot = createBootstrap();
     NEMO_SKIP_UNLESS_SLANG(boot);
     const auto configPath = writeColorConfig();
@@ -1870,31 +2032,50 @@ TEST(ViewerCache, StaleRequestsAndFailedMuxesNeverBecomeReplayable) {
     const auto composition = makeSourceComposition("plate", SourceReference{clip.path.string()}, false);
     const auto request = requestFor(composition.doc, {0, 0, 64, 48}, 0);
     {
+        // A superseded request never publishes, so the frame it produced is not
+        // replayable and the destination's freshness has moved past it.
         eval::ViewerSession session(*boot.instance, *boot.device, *boot.allocator, slangSpvDir());
         session.configureCache(directory.options());
         session.supersedeCache(composition.doc.stateRevision(), 10);
-        (void)session.render(composition.doc, request, 10'000'000'000ULL, 9);
+        const auto frame = session.render(composition.doc, request, 10'000'000'000ULL, 9);
+        ASSERT_TRUE(frame.image);
         session.flushCache();
         EXPECT_EQ(session.cacheCounts().staleRejected, 1U);
         EXPECT_EQ(session.cacheCounts().published, 0U);
     }
     {
-        auto options = directory.options();
-        const media::EncodeFailure failure{media::EncodeFailure::Stage::Finalization, 1};
-        options.encoding.injectedFailure = &failure;
-        eval::ViewerSession session(*boot.instance, *boot.device, *boot.allocator, slangSpvDir());
-        session.configureCache(options);
-        EXPECT_FALSE(session.render(composition.doc, request).cacheHit);
-        EXPECT_THROW(session.flushCache(), std::runtime_error);
-        EXPECT_EQ(session.cacheCounts().published, 0U);
-        EXPECT_EQ(session.cacheCounts().encodedFrames, 0U);
-    }
-    {
+        // A frame written through the cache is replayable, and each write is
+        // durable before the next cache instance reads it.
         eval::ViewerSession session(*boot.instance, *boot.device, *boot.allocator, slangSpvDir());
         session.configureCache(directory.options());
         EXPECT_FALSE(session.render(composition.doc, request).cacheHit);
         session.flushCache();
         EXPECT_TRUE(session.render(composition.doc, request).cacheHit);
+    }
+    // Corrupt the cache-owned storage the way an interrupted or damaged write
+    // leaves it: the frame must be rejected rather than served, and the live
+    // graph stays authoritative for it.
+    std::size_t corrupted = 0;
+    for (const auto& entry : std::filesystem::recursive_directory_iterator(directory.path)) {
+        if (!entry.is_regular_file())
+            continue;
+        std::error_code error;
+        const auto size = std::filesystem::file_size(entry.path(), error);
+        if (error || size == 0)
+            continue;
+        std::ofstream truncated(entry.path(), std::ios::binary | std::ios::trunc);
+        truncated << std::string(static_cast<std::size_t>(size) / 2, '\x7f');
+        truncated.close();
+        ++corrupted;
+    }
+    ASSERT_GT(corrupted, 0U) << "the cache must own durable files in its configured directory";
+    {
+        eval::ViewerSession session(*boot.instance, *boot.device, *boot.allocator, slangSpvDir());
+        session.configureCache(directory.options());
+        const auto frame = session.render(composition.doc, request);
+        EXPECT_FALSE(frame.cacheHit);
+        EXPECT_TRUE(frame.image) << "a rejected cache frame must leave the live graph authoritative";
+        EXPECT_FALSE(frame.replay);
     }
     expectValidationClean(*boot.instance);
 }
@@ -1926,7 +2107,7 @@ TEST(ViewerCache, QueueContentionWaitsInsteadOfLosingARequestedFrame) {
     expectValidationClean(*boot.instance);
 }
 
-TEST(ViewerCache, ActiveBatchConsumesAdmissionCapacity) {
+TEST(ViewerCache, BoundedPreparationDropsRatherThanGrowingBehindAStalledWriter) {
     const auto boot = createBootstrap();
     NEMO_SKIP_UNLESS_SLANG(boot);
     const auto configPath = writeColorConfig();
@@ -1935,11 +2116,11 @@ TEST(ViewerCache, ActiveBatchConsumesAdmissionCapacity) {
     const auto composition = makeSourceComposition("plate", SourceReference{clip.path.string()}, false);
     eval::ViewerSession viewer(*boot.instance, *boot.device, *boot.allocator, slangSpvDir());
     const auto frame = viewer.render(composition.doc, requestFor(composition.doc, {0, 0, 64, 48}, 0));
+    ASSERT_TRUE(frame.image);
     CacheDirectory directory;
     auto options = directory.options();
-    options.chunkFrames = 3;
-    options.maxPendingFrames = 4;
-    eval::ViewerCache cache(*boot.instance, *boot.device, *boot.allocator, slangSpvDir() / "mediaConvert.spv");
+    options.maxPendingFrames = 2;
+    eval::ViewerCache cache(*boot.device, *boot.allocator, slangSpvDir());
     cache.configure(options);
 
     struct Gate {
@@ -1974,43 +2155,37 @@ TEST(ViewerCache, ActiveBatchConsumesAdmissionCapacity) {
     dependency.wait = {gate->semaphore};
     dependency.waitValues = {1};
     ASSERT_TRUE(queue.submit([](VkCommandBuffer) {}, {gate}, dependency, 5'000'000'000ULL));
-    std::array<eval::ViewerCachePublication, 3> batch;
-    for (std::size_t index = 0; index < batch.size(); ++index) {
-        batch[index] = {.identity = "display-" + std::to_string(index),
-                        .chunkGroupKey = "display",
-                        .localTime = static_cast<std::int64_t>(index),
-                        .revision = 1,
-                        .generation = 1,
-                        .image = frame.image,
-                        .layout = frame.layout};
+
+    // The writer cannot complete anything while the shared queue is gated, so
+    // the admission bound — not encode speed — decides what is accepted.
+    std::vector<std::pair<std::string, bool>> admissions;
+    for (int index = 0; index < 8; ++index) {
+        std::string identity = "display-" + std::to_string(index);
+        const bool accepted = cache.enqueue(eval::ViewerCachePublication{.identity = identity,
+                                                                         .viewingIdentity = "view",
+                                                                         .localTime = index,
+                                                                         .revision = 1,
+                                                                         .generation = 1,
+                                                                         .image = frame.image,
+                                                                         .layout = frame.layout,
+                                                                         .description = frame.description,
+                                                                         .request = frame.request});
+        admissions.emplace_back(std::move(identity), accepted);
     }
-    ASSERT_TRUE(cache.enqueueBatch(batch));
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-    while (cache.counts().activeFrames != 3 && cache.counts().errors == 0 &&
-           std::chrono::steady_clock::now() < deadline)
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    ASSERT_EQ(cache.counts().activeFrames, 3U);
-    const auto dropped = cache.counts().admissionDropped;
-    ASSERT_TRUE(cache.enqueue(eval::ViewerCachePublication{.identity = "extra-1",
-                                                           .chunkGroupKey = "display",
-                                                           .localTime = 4,
-                                                           .revision = 1,
-                                                           .generation = 1,
-                                                           .image = frame.image,
-                                                           .layout = frame.layout}));
-    ASSERT_TRUE(cache.enqueue(eval::ViewerCachePublication{.identity = "extra-2",
-                                                           .chunkGroupKey = "display",
-                                                           .localTime = 5,
-                                                           .revision = 1,
-                                                           .generation = 1,
-                                                           .image = frame.image,
-                                                           .layout = frame.layout}));
-    EXPECT_GT(cache.counts().admissionDropped, dropped);
-    EXPECT_LE(cache.counts().activeFrames + cache.counts().pendingFrames, 4U);
+    // Bounded, not grown: a stalled writer holds at most the configured number
+    // of prepared frames and the rest were dropped rather than queued.
+    EXPECT_LE(cache.counts().activeFrames + cache.counts().pendingFrames,
+              static_cast<std::uint64_t>(options.maxPendingFrames));
+    EXPECT_GT(cache.counts().admissionDropped + cache.counts().admissionRejected, 0U);
     ASSERT_EQ(release.signal(), VK_SUCCESS);
     cache.flush();
-    EXPECT_FALSE(cache.lookup("extra-1", frame.layout, 5'000'000'000ULL).has_value());
-    EXPECT_TRUE(cache.lookup("extra-2", frame.layout, 5'000'000'000ULL).has_value());
+    // Backpressure can refuse a new publication, but cannot silently discard a
+    // still-valid frame whose publication was already accepted.
+    for (const auto& [identity, accepted] : admissions) {
+        EXPECT_EQ(cache.lookup(identity).state,
+                  accepted ? eval::ViewerCacheState::Ready : eval::ViewerCacheState::Missing)
+            << identity;
+    }
     expectValidationClean(*boot.instance);
 }
 
@@ -2023,8 +2198,9 @@ TEST(ViewerCache, SupersessionDuringEncodingRejectsTheCompletedWrite) {
     const auto composition = makeSourceComposition("plate", SourceReference{clip.path.string()}, false);
     eval::ViewerSession viewer(*boot.instance, *boot.device, *boot.allocator, slangSpvDir());
     auto frame = viewer.render(composition.doc, requestFor(composition.doc, {0, 0, 64, 48}, 0));
+    ASSERT_TRUE(frame.image);
     CacheDirectory directory;
-    eval::ViewerCache cache(*boot.instance, *boot.device, *boot.allocator, slangSpvDir() / "mediaConvert.spv");
+    eval::ViewerCache cache(*boot.device, *boot.allocator, slangSpvDir());
     cache.configure(directory.options());
 
     struct Gate {
@@ -2060,25 +2236,26 @@ TEST(ViewerCache, SupersessionDuringEncodingRejectsTheCompletedWrite) {
     dependency.waitValues = {1};
     ASSERT_TRUE(queue.submit([](VkCommandBuffer) {}, {gate}, dependency, 5'000'000'000ULL));
     ASSERT_TRUE(cache.enqueue(eval::ViewerCachePublication{.identity = "frame",
-                                                           .chunkGroupKey = "display",
+                                                           .viewingIdentity = "view",
                                                            .localTime = 0,
                                                            .revision = 1,
                                                            .generation = 1,
                                                            .image = frame.image,
-                                                           .layout = frame.layout}));
+                                                           .layout = frame.layout,
+                                                           .description = frame.description,
+                                                           .request = frame.request}));
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
     while (cache.counts().encodingFrames == 0 && cache.counts().errors == 0 &&
            std::chrono::steady_clock::now() < deadline)
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    const bool encodingStarted = cache.counts().encodingFrames == 1;
+    const bool preparationStarted = cache.counts().encodingFrames != 0;
     cache.supersede(2, 2);
     ASSERT_EQ(release.signal(), VK_SUCCESS);
     cache.flush();
-    EXPECT_TRUE(encodingStarted);
-    EXPECT_EQ(cache.counts().encodedFrames, 1U);
+    EXPECT_TRUE(preparationStarted);
     EXPECT_EQ(cache.counts().published, 0U);
     EXPECT_EQ(cache.counts().staleRejected, 1U);
-    const bool postSupersessionLookupHit = cache.lookup("frame", frame.layout, 5'000'000'000ULL).has_value();
+    const bool postSupersessionLookupHit = cache.lookup("frame").state == eval::ViewerCacheState::Ready;
     const auto after = cache.counts();
     RecordProperty("actual_frame_count", std::to_string(after.encodedFrames));
     RecordProperty("encodedFrames", std::to_string(after.encodedFrames));
@@ -2089,8 +2266,8 @@ TEST(ViewerCache, SupersessionDuringEncodingRejectsTheCompletedWrite) {
     expectValidationClean(*boot.instance);
 }
 
-TEST(ViewerCache, StalePredecessorRetainsEncodedOffsetAcrossPersistence) {
-    const auto boot = createBootstrap();
+TEST(ViewerCache, StalePredecessorKeepsValidSiblingsAcrossPersistence) {
+    const auto boot = createBootstrap({.externalSharing = true});
     NEMO_SKIP_UNLESS_SLANG(boot);
     const auto configPath = writeColorConfig();
     const test::ScopedEnvironment ocio("OCIO", configPath.string());
@@ -2099,10 +2276,12 @@ TEST(ViewerCache, StalePredecessorRetainsEncodedOffsetAcrossPersistence) {
     eval::ViewerSession viewer(*boot.instance, *boot.device, *boot.allocator, slangSpvDir());
     const auto first = viewer.render(composition.doc, requestFor(composition.doc, {0, 0, 64, 48}, 0));
     const auto later = viewer.render(composition.doc, requestFor(composition.doc, {0, 0, 64, 48}, 1));
+    ASSERT_TRUE(first.image);
+    ASSERT_TRUE(later.image);
     const CpuImage expectedLater = readViewerFrame(later, boot);
+    const ReplayReader reader(boot);
     CacheDirectory directory;
-    auto options = directory.options();
-    options.chunkFrames = 3;
+    const auto options = directory.options();
 
     struct Gate {
         VkDevice device{};
@@ -2133,7 +2312,7 @@ TEST(ViewerCache, StalePredecessorRetainsEncodedOffsetAcrossPersistence) {
     };
 
     {
-        eval::ViewerCache cache(*boot.instance, *boot.device, *boot.allocator, slangSpvDir() / "mediaConvert.spv");
+        eval::ViewerCache cache(*boot.device, *boot.allocator, slangSpvDir());
         cache.configure(options);
         Release release{gate};
         auto& queue = boot.device->submissions(boot.device->graphics_family());
@@ -2142,76 +2321,70 @@ TEST(ViewerCache, StalePredecessorRetainsEncodedOffsetAcrossPersistence) {
         dependency.waitValues = {1};
         ASSERT_TRUE(queue.submit([](VkCommandBuffer) {}, {gate}, dependency, 5'000'000'000ULL));
 
-        std::array<eval::ViewerCachePublication, 2> batch{eval::ViewerCachePublication{.identity = "stale-predecessor",
-                                                                                       .chunkGroupKey = "display",
-                                                                                       .localTime = 0,
-                                                                                       .revision = 1,
-                                                                                       .generation = 1,
-                                                                                       .image = first.image,
-                                                                                       .layout = first.layout},
-                                                          eval::ViewerCachePublication{.identity = "survivor",
-                                                                                       .chunkGroupKey = "display",
-                                                                                       .localTime = 1,
-                                                                                       .revision = 1,
-                                                                                       .generation = 1,
-                                                                                       .image = later.image,
-                                                                                       .layout = later.layout}};
-        ASSERT_TRUE(cache.enqueueBatch(batch));
+        const auto publish = [&](const std::string& identity, std::int64_t localTime, std::uint64_t generation,
+                                 const eval::ViewerFrame& frame, eval::ViewerDestination destination) {
+            return eval::ViewerCachePublication{.identity = identity,
+                                                .viewingIdentity = "view",
+                                                .localTime = localTime,
+                                                .revision = 1,
+                                                .generation = generation,
+                                                .image = frame.image,
+                                                .layout = frame.layout,
+                                                .description = frame.description,
+                                                .request = frame.request,
+                                                .destination = destination};
+        };
+        ASSERT_TRUE(cache.enqueue(publish("stale-predecessor", 0, 1, first, eval::ViewerDestination::Interactive)));
+        ASSERT_TRUE(cache.enqueue(publish("survivor", 1, 1, later, eval::ViewerDestination::Interactive)));
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-        while (cache.counts().encodingFrames != batch.size() && cache.counts().errors == 0 &&
-               std::chrono::steady_clock::now() < deadline)
+        while (cache.counts().activeFrames + cache.counts().pendingFrames + cache.counts().encodingFrames < 2 &&
+               cache.counts().errors == 0 && std::chrono::steady_clock::now() < deadline)
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
-        ASSERT_EQ(cache.counts().encodingFrames, batch.size());
 
-        ASSERT_TRUE(cache.enqueue(eval::ViewerCachePublication{.identity = "stale-predecessor",
-                                                               .chunkGroupKey = "display",
-                                                               .localTime = 0,
-                                                               .revision = 1,
-                                                               .generation = 2,
-                                                               .image = first.image,
-                                                               .layout = first.layout}));
+        // Replacing one identity at a newer generation must not disturb its
+        // still-current sibling.
+        ASSERT_TRUE(cache.enqueue(publish("stale-predecessor", 0, 2, first, eval::ViewerDestination::Interactive)));
         // Both insertion orders must keep the still-current Interactive
         // producer when the independent Cache producer becomes stale.
-        const eval::ViewerCachePublication shared{.identity = "shared-forward",
-                                                  .chunkGroupKey = "display",
-                                                  .revision = 1,
-                                                  .generation = 3,
-                                                  .image = first.image,
-                                                  .layout = first.layout};
-        std::array<eval::ViewerCachePublication, 4> overlapping{shared, shared, shared, shared};
-        overlapping[1].destination = eval::ViewerDestination::Cache;
-        overlapping[2].destination = eval::ViewerDestination::Cache;
-        overlapping[2].identity = "shared-reverse";
-        overlapping[3].identity = "shared-reverse";
-        ASSERT_TRUE(cache.enqueueBatch(overlapping));
+        ASSERT_TRUE(cache.enqueue(publish("shared-forward", 0, 3, first, eval::ViewerDestination::Interactive)));
+        ASSERT_TRUE(cache.enqueue(publish("shared-forward", 0, 3, first, eval::ViewerDestination::Cache)));
+        ASSERT_TRUE(cache.enqueue(publish("shared-reverse", 0, 3, first, eval::ViewerDestination::Cache)));
+        ASSERT_TRUE(cache.enqueue(publish("shared-reverse", 0, 3, first, eval::ViewerDestination::Interactive)));
         cache.supersede(2, 4, eval::ViewerDestination::Cache);
         ASSERT_EQ(release.signal(), VK_SUCCESS);
         cache.flush();
 
-        const auto replay = cache.lookup("survivor", later.layout, 5'000'000'000ULL);
-        ASSERT_TRUE(replay.has_value());
-        expectImagesClose(expectedLater, readViewerFrame(eval::ViewerFrame{replay->image, replay->layout}, boot),
+        const auto replay = awaitReady(cache, "survivor");
+        ASSERT_EQ(replay.state, eval::ViewerCacheState::Ready);
+        ASSERT_TRUE(replay.frame);
+        expectImagesClose(expectedLater,
+                          reader.present(*replay.frame->image, replay.frame->layout, gpu::ViewerChannel::RGBA, boot),
                           0.035F, "surviving frame after stale filtering");
     }
 
     {
-        eval::ViewerCache reopened(*boot.instance, *boot.device, *boot.allocator, slangSpvDir() / "mediaConvert.spv");
+        eval::ViewerCache reopened(*boot.device, *boot.allocator, slangSpvDir());
         reopened.configure(options);
-        const auto replay = reopened.lookup("survivor", later.layout, 5'000'000'000ULL);
-        ASSERT_TRUE(replay.has_value());
-        expectImagesClose(expectedLater, readViewerFrame(eval::ViewerFrame{replay->image, replay->layout}, boot),
+        // Reopened records are prepared asynchronously: the lookup is retried
+        // while it is Loading, which is never a miss.
+        const auto replay = awaitReady(reopened, "survivor");
+        ASSERT_EQ(replay.state, eval::ViewerCacheState::Ready);
+        ASSERT_TRUE(replay.frame);
+        expectImagesClose(expectedLater,
+                          reader.present(*replay.frame->image, replay.frame->layout, gpu::ViewerChannel::RGBA, boot),
                           0.035F, "surviving frame after reopening");
-        EXPECT_TRUE(reopened.lookup("shared-forward", first.layout, 5'000'000'000ULL));
-        EXPECT_TRUE(reopened.lookup("shared-reverse", first.layout, 5'000'000'000ULL));
+        EXPECT_EQ(awaitReady(reopened, "shared-forward").state, eval::ViewerCacheState::Ready);
+        EXPECT_EQ(awaitReady(reopened, "shared-reverse").state, eval::ViewerCacheState::Ready);
     }
     expectValidationClean(*boot.instance);
 }
 
 TEST(ViewerCache, OddSizedRegionsReplayAtTheirExactRequestedExtent) {
-    const auto boot = createBootstrap();
+    const auto boot = createBootstrap({.externalSharing = true});
     NEMO_SKIP_UNLESS_SLANG(boot);
     const auto configPath = writeColorConfig();
     const test::ScopedEnvironment ocio("OCIO", configPath.string());
+    const ReplayReader reader(boot);
     TaggedClip clip(AV_PIX_FMT_YUV444P, {126});
     const auto composition = makeSourceComposition("plate", SourceReference{clip.path.string()}, false);
     CacheDirectory directory;
@@ -2219,12 +2392,661 @@ TEST(ViewerCache, OddSizedRegionsReplayAtTheirExactRequestedExtent) {
     session.configureCache(directory.options());
     const auto request = requestFor(composition.doc, {1, 3, 31, 21}, 0);
     const auto original = session.render(composition.doc, request);
+    ASSERT_TRUE(original.image);
+    const CpuImage expected = readViewerFrame(original, boot);
     session.flushCache();
     const auto replay = session.render(composition.doc, request);
     ASSERT_TRUE(replay.cacheHit);
-    EXPECT_EQ(replay.image->extent().width, 31U);
-    EXPECT_EQ(replay.image->extent().height, 21U);
-    expectImagesClose(readViewerFrame(original, boot), readViewerFrame(replay, boot), 0.035F,
-                      "odd-region display replay");
+    ASSERT_TRUE(replay.replay);
+    // BC7 pads its 4x4 blocks; the LOGICAL extent stays the requested odd
+    // raster, and no padded texel is ever presented.
+    EXPECT_EQ(replay.layout.width, 31);
+    EXPECT_EQ(replay.layout.height, 21);
+    EXPECT_EQ(replay.replay->image.extent().width, 31U);
+    EXPECT_EQ(replay.replay->image.extent().height, 21U);
+    const CpuImage presented = reader.present(replay, boot);
+    ASSERT_EQ(presented.width(), 31);
+    ASSERT_EQ(presented.height(), 21);
+    expectImagesClose(expected, presented, 0.035F, "odd-region display replay");
+    expectValidationClean(*boot.instance);
+}
+
+// Acceptance example 4: a valid known replay hit performs zero source decode,
+// zero effect evaluation and zero description/planning. Removing the source
+// media is what makes the heavy live path genuinely unavailable — describing
+// the target cannot succeed without it — so a served replay proves the graph
+// was never consulted at all. Nothing here is a production bypass flag: the
+// same session renders frame 1 through the ordinary path and fails.
+TEST(ViewerCache, KnownReplayHitBypassesTheGraphWhileTheHeavyPathIsUnavailable) {
+    const auto boot = createBootstrap({.externalSharing = true});
+    NEMO_SKIP_UNLESS_SLANG(boot);
+    const auto configPath = writeColorConfig();
+    const test::ScopedEnvironment ocio("OCIO", configPath.string());
+    const ReplayReader reader(boot);
+    CacheDirectory directory;
+    TaggedClip clip(AV_PIX_FMT_YUV444P, {126, 126});
+    const auto composition = makeSourceComposition("plate", SourceReference{clip.path.string()}, false);
+    const auto request = requestFor(composition.doc, {0, 0, 64, 48}, 0);
+    eval::ViewerSession session(*boot.instance, *boot.device, *boot.allocator, slangSpvDir());
+    session.configureCache(directory.options());
+    const auto live = session.render(composition.doc, request);
+    ASSERT_FALSE(live.cacheHit);
+    ASSERT_TRUE(live.image);
+    const CpuImage expected = readViewerFrame(live, boot);
+    session.flushCache();
+
+    std::error_code removed;
+    std::filesystem::remove(clip.path, removed);
+    ASSERT_FALSE(removed) << removed.message();
+
+    const auto before = session.reuseCounts();
+    const auto indexed = session.replay(request, composition.doc.stateRevision());
+    ASSERT_TRUE(indexed);
+    const auto& replay = *indexed;
+    ASSERT_TRUE(replay.cacheHit) << "a validated hit must not need the media or the graph";
+    ASSERT_TRUE(replay.replay);
+    EXPECT_FALSE(replay.image) << "no float reconstruction of a cached frame";
+    EXPECT_EQ(session.reuseCounts(), before) << "no decode, no effect evaluation, no planning";
+    expectImagesClose(expected, reader.present(replay, boot), 0.035F, "replay with the heavy path unavailable");
+
+    // The heavy path really is unavailable: an unvisited frame cannot even be
+    // described, which is what makes the successful replay above meaningful.
+    EXPECT_FALSE(session.replay(requestFor(composition.doc, {0, 0, 64, 48}, 1), composition.doc.stateRevision()));
+    EXPECT_ANY_THROW((void)session.render(composition.doc, requestFor(composition.doc, {0, 0, 64, 48}, 1)));
+    expectValidationClean(*boot.instance);
+}
+
+// Acceptance examples 5 and 8: a valid frame that is still preparing is NOT a
+// miss — the same demand is retried (ViewerReplayPending) and coalesces with the
+// preparation the cache already admitted instead of re-entering the graph — and
+// cache construction never stands in front of foreground presentation. The
+// foreground scope is what defers the writer's own GPU submissions (block
+// encode, compressed upload): while it is held a live frame is still produced
+// (the gate is a construction gate, not a device wait) and nothing is
+// committed; the writer resumes exactly when the last scope ends.
+TEST(ViewerCache, ValidFrameStillLoadingIsNotAMiss) {
+    const auto boot = createBootstrap();
+    NEMO_SKIP_UNLESS_SLANG(boot);
+    const auto configPath = writeColorConfig();
+    const test::ScopedEnvironment ocio("OCIO", configPath.string());
+    TaggedClip clip(AV_PIX_FMT_YUV444P, {126});
+    const auto composition = makeSourceComposition("plate", SourceReference{clip.path.string()}, false);
+    const auto request = requestFor(composition.doc, {0, 0, 64, 48}, 0);
+    CacheDirectory directory;
+    eval::ViewerSession session(*boot.instance, *boot.device, *boot.allocator, slangSpvDir());
+    session.configureCache(directory.options());
+
+    {
+        auto foreground = session.foregroundScope();
+        const auto live = session.render(composition.doc, request);
+        ASSERT_FALSE(live.cacheHit);
+        ASSERT_TRUE(live.image) << "foreground rendering is never queued behind cache construction";
+        ASSERT_TRUE(live.cacheQueued) << "the frame was accepted for preparation";
+        // The writer is deferred, so the accepted frame has neither been encoded
+        // nor committed: the one thing it is NOT is a miss.
+        EXPECT_EQ(session.cacheCounts().encodedFrames, 0U) << "the gate suppresses writer submissions";
+        EXPECT_EQ(session.cacheCounts().published, 0U) << "background submission is deferred";
+
+        const auto before = session.reuseCounts();
+        const auto misses = session.cacheCounts().misses;
+        EXPECT_THROW((void)session.render(composition.doc, request), eval::ViewerReplayPending)
+            << "a still-preparing replay is a retry, never a rerender";
+        EXPECT_EQ(session.reuseCounts(), before) << "the retry resolved nothing and rendered nothing";
+        EXPECT_EQ(session.cacheCounts().misses, misses) << "an admitted preparation is never a miss";
+    }
+    session.flushCache();
+    EXPECT_GT(session.cacheCounts().encodedFrames, 0U) << "the writer resumes when the last scope ends";
+    const auto replay = retryWhilePreparing([&] { return session.render(composition.doc, request); });
+    ASSERT_TRUE(replay.cacheHit);
+    ASSERT_TRUE(replay.replay);
+    EXPECT_FALSE(replay.image);
+    expectValidationClean(*boot.instance);
+}
+
+// Acceptance example 5's other half: the replay-only seam the playback window
+// uses serves a demand this session already resolved, and a frame it never
+// resolved is NOT replayable — it is never rendered to fill the window.
+TEST(ViewerCache, ReplaySeamServesKnownFramesAndNeverRendersUnknownOnes) {
+    const auto boot = createBootstrap();
+    NEMO_SKIP_UNLESS_SLANG(boot);
+    const auto configPath = writeColorConfig();
+    const test::ScopedEnvironment ocio("OCIO", configPath.string());
+    TaggedClip clip(AV_PIX_FMT_YUV444P, {126, 126});
+    const auto composition = makeSourceComposition("plate", SourceReference{clip.path.string()}, false);
+    CacheDirectory directory;
+    eval::ViewerSession session(*boot.instance, *boot.device, *boot.allocator, slangSpvDir());
+    session.configureCache(directory.options());
+    const auto intentFor = [&](std::int64_t frame) {
+        return eval::ViewIntent{.network = composition.doc.rootNetworkId(),
+                                .target = resolveOutput(composition.doc, composition.doc.rootNetworkId()),
+                                .localTime = frame,
+                                .forceFullFrame = true};
+    };
+
+    // Nothing has been resolved yet, and a replay-only call never resolves:
+    // no graph work happens for either frame.
+    const auto idle = session.reuseCounts();
+    EXPECT_FALSE(session.replay(intentFor(0), composition.doc.stateRevision()).has_value());
+    EXPECT_FALSE(session.replay(intentFor(1), composition.doc.stateRevision()).has_value());
+    EXPECT_EQ(session.reuseCounts(), idle) << "the replay seam never enters the graph";
+
+    ViewerResolutionPolicy resolution;
+    const auto live = session.render(composition.doc, intentFor(0), resolution);
+    ASSERT_FALSE(live.cacheHit);
+    ASSERT_TRUE(live.image);
+    session.flushCache();
+
+    const auto replay = session.replay(intentFor(0), composition.doc.stateRevision());
+    ASSERT_TRUE(replay.has_value());
+    ASSERT_TRUE(replay->replay);
+    EXPECT_FALSE(replay->image);
+    EXPECT_EQ(replay->revision, composition.doc.stateRevision());
+    EXPECT_EQ(replay->request.localTime, 0);
+
+    // The neighbour was never resolved, so it is simply not replayable — and
+    // the probe still did no work rather than rendering it.
+    const auto beforeNeighbour = session.reuseCounts();
+    EXPECT_FALSE(session.replay(intentFor(1), composition.doc.stateRevision()).has_value());
+    EXPECT_EQ(session.reuseCounts(), beforeNeighbour);
+    expectValidationClean(*boot.instance);
+}
+
+// The replay presentation samples the compressed frame into the same display
+// form the live frame presents — one pass, the same selection, no second
+// viewing transform. An isolated primary channel is the case where a second
+// transform or a re-derived selection would be visible, and the live frame next
+// to the replay is the oracle.
+TEST(ViewerCache, ReplayPresentsTheSameDisplayAsTheLiveFrame) {
+    const auto boot = createBootstrap({.externalSharing = true});
+    NEMO_SKIP_UNLESS_SLANG(boot);
+    const auto configPath = writeColorConfig();
+    const test::ScopedEnvironment ocio("OCIO", configPath.string());
+    const ReplayReader reader(boot);
+    // A horizontal luma ramp: a uniform frame would make the comparison pass
+    // vacuously.
+    TaggedClip clip(AV_PIX_FMT_YUV444P, {126}, 128, 128, AVCOL_TRC_BT709, /*tagged=*/true, /*horizontalRamp=*/true);
+    const auto composition = makeSourceComposition("plate", SourceReference{clip.path.string()}, false);
+    CacheDirectory directory;
+    eval::ViewerSession session(*boot.instance, *boot.device, *boot.allocator, slangSpvDir());
+    session.configureCache(directory.options());
+    const auto intent = [&] {
+        return eval::ViewIntent{.network = composition.doc.rootNetworkId(),
+                                .target = resolveOutput(composition.doc, composition.doc.rootNetworkId()),
+                                .localTime = 0,
+                                .forceFullFrame = true,
+                                .channel = "R"};
+    };
+    ViewerResolutionPolicy resolution;
+    const auto live = session.render(composition.doc, intent(), resolution);
+    ASSERT_FALSE(live.cacheHit);
+    ASSERT_TRUE(live.image);
+    EXPECT_EQ(live.presentationChannel, gpu::ViewerChannel::Red);
+    session.flushCache();
+    const auto replay = session.render(composition.doc, intent(), resolution);
+    ASSERT_TRUE(replay.cacheHit);
+    ASSERT_TRUE(replay.replay);
+    EXPECT_EQ(replay.presentationChannel, gpu::ViewerChannel::Red);
+
+    const CpuImage livePixels = reader.presentLive(live, boot);
+    const CpuImage replayPixels = reader.present(replay, boot);
+    expectImagesClose(livePixels, replayPixels, 0.035F, "replay presents the live display");
+    // The selection really is an isolation over an opaque composite, and the
+    // ramp really arrived, so the comparison above is not vacuous.
+    const float first = livePixels.pixel(0, 0)[0];
+    const float last = livePixels.pixel(livePixels.width() - 1, 0)[0];
+    EXPECT_GT(std::abs(last - first), 0.05F);
+    for (int x = 0; x < livePixels.width(); x += 4) {
+        const auto pixel = livePixels.pixel(x, 0);
+        EXPECT_EQ(pixel[0], pixel[1]) << "isolated channel is replicated";
+        EXPECT_EQ(pixel[1], pixel[2]);
+        EXPECT_EQ(pixel[3], 1.0F) << "presentation is opaque (issue #99)";
+    }
+    expectValidationClean(*boot.instance);
+}
+
+// The compressed representation carries alpha. A view that demands the matte by
+// name displays it in the evaluated image's RGB (issue #99), and a replay must
+// preserve it — the superseded video representation could not carry a matte at
+// all, and this must not decay into "opaque playback".
+TEST(ViewerCache, ReplayPreservesTheDemandedAlphaMatte) {
+    const auto boot = createBootstrap({.externalSharing = true});
+    NEMO_SKIP_UNLESS_SLANG(boot);
+    const auto configPath = writeColorConfig();
+    const test::ScopedEnvironment ocio("OCIO", configPath.string());
+    const ReplayReader reader(boot);
+    const ImageScratchDir scratch;
+    const std::string path = scratch.file("matte.exr");
+    CpuImage source(6, 4);
+    for (int y = 0; y < 4; ++y) {
+        for (int x = 0; x < 6; ++x)
+            source.setPixel(x, y, {0.25F, 0.5F, 0.75F, x < 3 ? 0.0F : 1.0F});
+    }
+    media::writeImage(path, source, media::OutputPrecision::Float32);
+    const auto composition = makeSourceComposition("plate", SourceReference{path}, false);
+    auto request = stillRequest(composition.doc, {0, 0, 6, 4}, 6, 4, 0);
+    request.channels = {"A"};
+    CacheDirectory directory;
+    eval::ViewerSession session(*boot.instance, *boot.device, *boot.allocator, slangSpvDir());
+    session.configureCache(directory.options());
+    const auto live = session.render(composition.doc, request);
+    ASSERT_FALSE(live.cacheHit);
+    ASSERT_TRUE(live.image);
+    const CpuImage expected = readViewerFrame(live, boot);
+    ASSERT_EQ(expected.width(), 6);
+    ASSERT_EQ(expected.height(), 4);
+    // The demanded matte travels in the display image's RGB, zeros included.
+    for (int x = 0; x < 3; ++x)
+        EXPECT_NEAR(expected.pixel(x, 2)[0], 0.0F, 1e-4F) << "transparent half";
+    for (int x = 3; x < 6; ++x)
+        EXPECT_NEAR(expected.pixel(x, 2)[0], 1.0F, 1e-4F) << "opaque half";
+    session.flushCache();
+    const auto replay = session.render(composition.doc, request);
+    ASSERT_TRUE(replay.cacheHit);
+    ASSERT_TRUE(replay.replay);
+    const CpuImage presented = reader.present(replay, boot);
+    expectImagesClose(expected, presented, 0.035F, "demanded alpha matte through BC7");
+    // The presentation stays an opaque composite of the demanded data: the
+    // matte is carried in RGB, never composited into the surface by its own
+    // alpha (issue #99).
+    for (int x = 0; x < presented.width(); x += 2)
+        EXPECT_EQ(presented.pixel(x, 3)[3], 1.0F) << "presentation alpha";
+    expectValidationClean(*boot.instance);
+}
+
+TEST(ViewerCache, Bc7BlocksPreserveRgbaAcrossOddSizedUpload) {
+    const auto boot = createBootstrap();
+    NEMO_SKIP_UNLESS_SLANG(boot);
+    constexpr int width = 65;
+    constexpr int height = 21;
+    CpuImage expected(width, height);
+    uint32_t noise = 106;
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            noise = noise * 1664525u + 1013904223u;
+            const float grain = (static_cast<float>(noise >> 24) / 255.0F - 0.5F) * 0.04F;
+            const float gray = x < 20 ? 0.2F + static_cast<float>(x) / 40.0F : 0.5F + grain;
+            std::array<float, 4> pixel{gray, gray, gray, x < 2 ? 0.0F : 1.0F};
+            if (x >= 20 && x < 40)
+                pixel = x < 23 ? std::array<float, 4>{1, 0, 0, 1} : std::array<float, 4>{0, 0, 1, 1};
+            if (x >= 48)
+                pixel[3] = static_cast<float>(y % 8) / 7.0F;
+            if (x == width - 1)
+                pixel = {1, 0, 0, 0.5F};
+            if (y == height - 1)
+                pixel = {0, 1, 0, 0.25F};
+            expected.setPixel(x, y, pixel);
+        }
+    }
+    auto& queue = boot.device->submissions(boot.device->graphics_family());
+    auto source = boot.allocator->create_image(
+        width, height, 1, VK_FORMAT_R32G32B32A32_SFLOAT,
+        VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, 2);
+    gpu::uploadImage(queue, *boot.allocator, source, expected.data(), width * height * 4 * sizeof(float),
+                     10'000'000'000ULL);
+    gpu::imageBarrier(queue, source, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL,
+                      VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_ACCESS_MEMORY_READ_BIT,
+                      VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT, 10'000'000'000ULL);
+    gpu::Bc7Encoder encoder(*boot.device, *boot.allocator, slangSpvDir());
+    auto encoded = encoder.encode(source);
+    ASSERT_TRUE(encoded);
+    ASSERT_TRUE(queue.wait(encoded->completion, 10'000'000'000ULL));
+    const auto* data = static_cast<const uint8_t*>(encoded->readback.mapped());
+    const std::vector<uint8_t> blocks(data, data + encoded->readback.size());
+    encoded.reset();
+    EXPECT_THROW((void)encoder.upload(width, height, std::span(blocks).first(blocks.size() - 1)), gpu::GpuException);
+    auto uploaded = encoder.upload(width, height, blocks);
+    ASSERT_TRUE(uploaded);
+    ASSERT_TRUE(queue.wait(uploaded->completion, 10'000'000'000ULL));
+
+    // Diagnostic-only raw RGBA sampling independently checks the fourth BC7
+    // component. Normal presentation intentionally emits opaque alpha (#99).
+    const auto shader = gpu::compileGlslToSpirv(R"(
+#version 450
+layout(local_size_x=8, local_size_y=8) in;
+layout(set=0, binding=0) uniform sampler2D sourceImage;
+layout(set=0, binding=1, rgba32f) writeonly uniform image2D outputImage;
+void main() {
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    if (any(greaterThanEqual(p, imageSize(outputImage)))) return;
+    imageStore(outputImage, p, texelFetch(sourceImage, p, 0));
+}
+)");
+    auto output = boot.allocator->create_image(width, height, 1, VK_FORMAT_R32G32B32A32_SFLOAT,
+                                               VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, 2);
+    auto pass = gpu::ComputePass::create(
+        *boot.device, shader,
+        {{0, 0, gpu::DescriptorKind::CombinedImageSampler, nullptr, &uploaded->image->image, true},
+         {0, 1, gpu::DescriptorKind::StorageImage, nullptr, &output}});
+    queue.submit_and_wait(
+        [&](VkCommandBuffer command) {
+            gpu::recordImageBarrier(command, output, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL,
+                                    VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                                    VK_ACCESS_SHADER_WRITE_BIT);
+            pass->record(command, (width + 7) / 8, (height + 7) / 8, 1);
+        },
+        10'000'000'000ULL);
+    CpuImage actual(width, height);
+    gpu::downloadImage(queue, *boot.allocator, output, actual.data(), width * height * 4 * sizeof(float),
+                       10'000'000'000ULL);
+    // Declared SDR approximation tolerance, including grain and unaligned
+    // saturated/alpha edges. A lost alpha channel or sRGB decode fails badly.
+    expectImagesClose(expected, actual, 0.08F, "BC7 raw RGBA block upload");
+    expectValidationClean(*boot.instance);
+}
+
+// A reopened cache must not hand a new record a name a pack it already owns is
+// using: a frame whose compressed payload is byte-identical to one already
+// persisted proposes exactly the same content-derived name, and appending it
+// into that pack would mis-address the record (and the frame that was already
+// there). Both records must stay independently addressable and keep their own
+// pixels after the reopen.
+TEST(ViewerCache, ReopeningAndPersistingIdenticalContentKeepsBothRecordsReadable) {
+    const auto boot = createBootstrap({.externalSharing = true});
+    NEMO_SKIP_UNLESS_SLANG(boot);
+    const auto configPath = writeColorConfig();
+    const test::ScopedEnvironment ocio("OCIO", configPath.string());
+    const ReplayReader reader(boot);
+    TaggedClip clip(AV_PIX_FMT_YUV444P, {126});
+    const auto composition = makeSourceComposition("plate", SourceReference{clip.path.string()}, false);
+    eval::ViewerSession viewer(*boot.instance, *boot.device, *boot.allocator, slangSpvDir());
+    const auto frame = viewer.render(composition.doc, requestFor(composition.doc, {0, 0, 64, 48}, 0));
+    ASSERT_TRUE(frame.image);
+    const CpuImage expected = readViewerFrame(frame, boot);
+    CacheDirectory directory;
+    const auto options = directory.options();
+    // The SAME display frame under two identities: identical compressed blocks,
+    // so the two writes must still land in independently readable records.
+    const auto publication = [&](std::string identity) {
+        return eval::ViewerCachePublication{.identity = std::move(identity),
+                                            .viewingIdentity = "view",
+                                            .localTime = 0,
+                                            .revision = 1,
+                                            .generation = 1,
+                                            .image = frame.image,
+                                            .layout = frame.layout,
+                                            .description = frame.description,
+                                            .request = frame.request};
+    };
+    {
+        eval::ViewerCache cache(*boot.device, *boot.allocator, slangSpvDir());
+        cache.configure(options);
+        ASSERT_TRUE(cache.enqueue(publication("first-record")));
+        cache.flush();
+    }
+    {
+        eval::ViewerCache reopened(*boot.device, *boot.allocator, slangSpvDir());
+        reopened.configure(options);
+        ASSERT_TRUE(reopened.enqueue(publication("second-record")));
+        reopened.flush();  // Throws when the reopened cache could not commit it.
+    }
+    {
+        eval::ViewerCache verified(*boot.device, *boot.allocator, slangSpvDir());
+        verified.configure(options);
+        const auto first = awaitReady(verified, "first-record");
+        ASSERT_EQ(first.state, eval::ViewerCacheState::Ready) << first.diagnostic;
+        ASSERT_TRUE(first.frame);
+        expectImagesClose(expected,
+                          reader.present(*first.frame->image, first.frame->layout, gpu::ViewerChannel::RGBA, boot),
+                          0.035F, "first record after an identical rewrite");
+        const auto second = awaitReady(verified, "second-record");
+        ASSERT_EQ(second.state, eval::ViewerCacheState::Ready) << second.diagnostic;
+        ASSERT_TRUE(second.frame);
+        expectImagesClose(expected,
+                          reader.present(*second.frame->image, second.frame->layout, gpu::ViewerChannel::RGBA, boot),
+                          0.035F, "second record with identical content");
+    }
+    expectValidationClean(*boot.instance);
+}
+
+// The configured disk budget is a bound on REAL owned bytes — pack headers and
+// records a reclaim has not removed yet included — and it only reclaims when it
+// must. Every frame measured here is written through the same encoding and
+// persistence path the viewer uses; only the identity key differs.
+TEST(ViewerCache, PhysicalDiskFootprintHonoursTheConfiguredBudget) {
+    const auto boot = createBootstrap({.externalSharing = true});
+    NEMO_SKIP_UNLESS_SLANG(boot);
+    const auto configPath = writeColorConfig();
+    const test::ScopedEnvironment ocio("OCIO", configPath.string());
+    const ReplayReader reader(boot);
+    // One luma per frame: a record served for the wrong frame is visible.
+    TaggedClip clip(AV_PIX_FMT_YUV444P, {126, 140, 160, 180});
+    const auto composition = makeSourceComposition("plate", SourceReference{clip.path.string()}, false);
+    eval::ViewerSession viewer(*boot.instance, *boot.device, *boot.allocator, slangSpvDir());
+    std::vector<eval::ViewerFrame> frames;
+    std::vector<CpuImage> reference;
+    for (int number = 0; number < 4; ++number) {
+        auto frame = viewer.render(composition.doc, requestFor(composition.doc, {0, 0, 64, 48}, number));
+        ASSERT_TRUE(frame.image);
+        reference.push_back(readViewerFrame(frame, boot));
+        frames.push_back(std::move(frame));
+    }
+    const auto publication = [&](const std::size_t index) {
+        return eval::ViewerCachePublication{.identity = "frame-" + std::to_string(index),
+                                            .viewingIdentity = "view",
+                                            .localTime = static_cast<std::int64_t>(index),
+                                            .revision = 1,
+                                            .generation = 1,
+                                            .image = frames[index].image,
+                                            .layout = frames[index].layout,
+                                            .description = frames[index].description,
+                                            .request = frames[index].request};
+    };
+    CacheDirectory directory;
+
+    // One record's real physical cost (its share of the container header, the
+    // prefix, the metadata and the payload), measured with no pressure at all.
+    const auto probePath = directory.path / "probe";
+    std::uint64_t recordBytes = 0;
+    {
+        std::filesystem::create_directories(probePath);
+        auto options = directory.options();
+        options.directory = probePath;
+        eval::ViewerCache cache(*boot.device, *boot.allocator, slangSpvDir());
+        cache.configure(options);
+        ASSERT_TRUE(cache.enqueue(publication(0)));
+        cache.flush();
+        recordBytes = cache.counts().diskBytes;
+        ASSERT_GT(recordBytes, 0U) << "a persisted frame owns physical bytes";
+    }
+
+    // No pressure: a budget that holds the whole set reclaims nothing, and every
+    // neighbour keeps its own pixels.
+    const auto roomyPath = directory.path / "roomy";
+    std::uint64_t roomyBudget = 0;
+    {
+        std::filesystem::create_directories(roomyPath);
+        auto options = directory.options();
+        options.directory = roomyPath;
+        roomyBudget = recordBytes * 6;
+        options.maxDiskBytes = roomyBudget;
+        eval::ViewerCache cache(*boot.device, *boot.allocator, slangSpvDir());
+        cache.configure(options);
+        for (std::size_t index = 0; index < frames.size(); ++index) {
+            ASSERT_TRUE(cache.enqueue(publication(index)));
+            cache.flush();
+        }
+        EXPECT_LE(cache.counts().diskBytes, roomyBudget);
+        EXPECT_LE(physicalCacheBytes(roomyPath), roomyBudget) << "headers and dead records are charged too";
+    }
+    {
+        auto options = directory.options();
+        options.directory = roomyPath;
+        eval::ViewerCache reopened(*boot.device, *boot.allocator, slangSpvDir());
+        reopened.configure(options);
+        for (std::size_t index = 0; index < frames.size(); ++index) {
+            const std::string identity = "frame-" + std::to_string(index);
+            const auto lookup = awaitReady(reopened, identity);
+            ASSERT_EQ(lookup.state, eval::ViewerCacheState::Ready) << identity << ": " << lookup.diagnostic;
+            ASSERT_TRUE(lookup.frame);
+            expectImagesClose(
+                reference[index],
+                reader.present(*lookup.frame->image, lookup.frame->layout, gpu::ViewerChannel::RGBA, boot), 0.035F,
+                "neighbour retained inside the disk budget");
+        }
+    }
+
+    // Under pressure: the budget is never exceeded, reclamation really happened,
+    // and the newest frame is still readable.
+    const auto tightPath = directory.path / "tight";
+    std::uint64_t tightBudget = 0;
+    {
+        std::filesystem::create_directories(tightPath);
+        auto options = directory.options();
+        options.directory = tightPath;
+        tightBudget = recordBytes * 2 + recordBytes / 2;
+        options.maxDiskBytes = tightBudget;
+        eval::ViewerCache cache(*boot.device, *boot.allocator, slangSpvDir());
+        cache.configure(options);
+        for (std::size_t index = 0; index < frames.size(); ++index) {
+            ASSERT_TRUE(cache.enqueue(publication(index)));
+            cache.flush();
+        }
+        EXPECT_LE(cache.counts().diskBytes, tightBudget);
+        EXPECT_LE(physicalCacheBytes(tightPath), tightBudget) << "the budget bounds owned physical bytes";
+    }
+    {
+        auto options = directory.options();
+        options.directory = tightPath;
+        eval::ViewerCache reopened(*boot.device, *boot.allocator, slangSpvDir());
+        reopened.configure(options);
+        std::size_t ready = 0;
+        for (std::size_t index = 0; index < frames.size(); ++index) {
+            if (awaitReady(reopened, "frame-" + std::to_string(index)).state == eval::ViewerCacheState::Ready)
+                ++ready;
+        }
+        EXPECT_LT(ready, frames.size()) << "a budget smaller than the set must reclaim something";
+        const auto newest = awaitReady(reopened, "frame-" + std::to_string(frames.size() - 1));
+        ASSERT_EQ(newest.state, eval::ViewerCacheState::Ready) << newest.diagnostic;
+        ASSERT_TRUE(newest.frame);
+        expectImagesClose(reference.back(),
+                          reader.present(*newest.frame->image, newest.frame->layout, gpu::ViewerChannel::RGBA, boot),
+                          0.035F, "newest frame after reclamation");
+    }
+    expectValidationClean(*boot.instance);
+}
+
+// A record whose metadata was damaged, and a record whose tail was cut off by an
+// interrupted write, are both refused: the cache reports the damage, never
+// serves a frame for them, and the intact record next to them stays readable.
+TEST(ViewerCache, DamagedRecordsAreRefusedWithoutLosingTheirNeighbours) {
+    const auto boot = createBootstrap({.externalSharing = true});
+    NEMO_SKIP_UNLESS_SLANG(boot);
+    const auto configPath = writeColorConfig();
+    const test::ScopedEnvironment ocio("OCIO", configPath.string());
+    const ReplayReader reader(boot);
+    TaggedClip clip(AV_PIX_FMT_YUV444P, {126, 200});
+    const auto composition = makeSourceComposition("plate", SourceReference{clip.path.string()}, false);
+    eval::ViewerSession viewer(*boot.instance, *boot.device, *boot.allocator, slangSpvDir());
+    const auto first = viewer.render(composition.doc, requestFor(composition.doc, {0, 0, 64, 48}, 0));
+    const auto second = viewer.render(composition.doc, requestFor(composition.doc, {0, 0, 64, 48}, 1));
+    ASSERT_TRUE(first.image);
+    ASSERT_TRUE(second.image);
+    const CpuImage firstPixels = readViewerFrame(first, boot);
+    const CpuImage secondPixels = readViewerFrame(second, boot);
+    CacheDirectory directory;
+    const auto publication = [&](std::string identity, std::int64_t localTime, const eval::ViewerFrame& frame) {
+        return eval::ViewerCachePublication{.identity = std::move(identity),
+                                            .viewingIdentity = "view",
+                                            .localTime = localTime,
+                                            .revision = 1,
+                                            .generation = 1,
+                                            .image = frame.image,
+                                            .layout = frame.layout,
+                                            .description = frame.description,
+                                            .request = frame.request};
+    };
+
+    // A damaged metadata block in the FIRST record of the pack: the metadata
+    // checksum no longer matches, so that record is refused while the record
+    // after it, which shares the file, is untouched.
+    const auto metadataPath = directory.path / "metadata";
+    {
+        std::filesystem::create_directories(metadataPath);
+        auto options = directory.options();
+        options.directory = metadataPath;
+        eval::ViewerCache cache(*boot.device, *boot.allocator, slangSpvDir());
+        cache.configure(options);
+        ASSERT_TRUE(cache.enqueue(publication("frame-0", 0, first)));
+        cache.flush();
+        ASSERT_TRUE(cache.enqueue(publication("frame-1", 1, second)));
+        cache.flush();
+    }
+    {
+        const auto files = cacheStorageFiles(metadataPath);
+        ASSERT_EQ(files.size(), 1U) << "both small records share one pack";
+        // The documented container contract: a 24-byte pack header, then the
+        // 32-byte record prefix, then the metadata the prefix's checksum covers.
+        constexpr std::streamoff kHeaderBytes = 24;
+        constexpr std::streamoff kPrefixBytes = 32;
+        std::fstream pack(files.front(), std::ios::binary | std::ios::in | std::ios::out);
+        ASSERT_TRUE(pack.is_open());
+        pack.seekg(kHeaderBytes + kPrefixBytes);
+        char damaged = 0;
+        pack.read(&damaged, 1);
+        ASSERT_TRUE(pack.good()) << "the record metadata lives inside the pack";
+        damaged = static_cast<char>(damaged ^ 0x01);
+        pack.seekp(kHeaderBytes + kPrefixBytes);
+        pack.write(&damaged, 1);
+        pack.close();
+        ASSERT_FALSE(pack.fail());
+    }
+    {
+        auto options = directory.options();
+        options.directory = metadataPath;
+        eval::ViewerCache reopened(*boot.device, *boot.allocator, slangSpvDir());
+        reopened.configure(options);
+        EXPECT_GT(reopened.counts().invalidEntries, 0U) << "the damaged record is identified, not ignored";
+        EXPECT_FALSE(reopened.counts().lastError.empty());
+        const auto damaged = reopened.lookup("frame-0");
+        EXPECT_NE(damaged.state, eval::ViewerCacheState::Ready);
+        EXPECT_FALSE(damaged.frame) << "no frame is served from a damaged record";
+        const auto valid = awaitReady(reopened, "frame-1");
+        ASSERT_EQ(valid.state, eval::ViewerCacheState::Ready) << valid.diagnostic;
+        ASSERT_TRUE(valid.frame);
+        expectImagesClose(secondPixels,
+                          reader.present(*valid.frame->image, valid.frame->layout, gpu::ViewerChannel::RGBA, boot),
+                          0.035F, "intact neighbour of a damaged record");
+    }
+
+    // A cut-off record tail (an interrupted write): the incomplete LAST record
+    // is refused and the complete record before it stays readable.
+    const auto truncatedPath = directory.path / "truncated";
+    {
+        std::filesystem::create_directories(truncatedPath);
+        auto options = directory.options();
+        options.directory = truncatedPath;
+        eval::ViewerCache cache(*boot.device, *boot.allocator, slangSpvDir());
+        cache.configure(options);
+        ASSERT_TRUE(cache.enqueue(publication("frame-0", 0, first)));
+        cache.flush();
+        ASSERT_TRUE(cache.enqueue(publication("frame-1", 1, second)));
+        cache.flush();
+    }
+    {
+        const auto files = cacheStorageFiles(truncatedPath);
+        ASSERT_EQ(files.size(), 1U);
+        std::error_code error;
+        const auto complete = std::filesystem::file_size(files.front(), error);
+        ASSERT_FALSE(error);
+        ASSERT_GT(complete, 8U);
+        std::filesystem::resize_file(files.front(), complete - 8, error);
+        ASSERT_FALSE(error);
+    }
+    {
+        auto options = directory.options();
+        options.directory = truncatedPath;
+        eval::ViewerCache reopened(*boot.device, *boot.allocator, slangSpvDir());
+        reopened.configure(options);
+        EXPECT_GT(reopened.counts().invalidEntries, 0U) << "a torn record tail is identified, not ignored";
+        const auto damaged = reopened.lookup("frame-1");
+        EXPECT_NE(damaged.state, eval::ViewerCacheState::Ready);
+        EXPECT_FALSE(damaged.frame) << "no frame is served from an incomplete record";
+        const auto valid = awaitReady(reopened, "frame-0");
+        ASSERT_EQ(valid.state, eval::ViewerCacheState::Ready) << valid.diagnostic;
+        ASSERT_TRUE(valid.frame);
+        expectImagesClose(firstPixels,
+                          reader.present(*valid.frame->image, valid.frame->layout, gpu::ViewerChannel::RGBA, boot),
+                          0.035F, "intact neighbour of a truncated record");
+    }
     expectValidationClean(*boot.instance);
 }

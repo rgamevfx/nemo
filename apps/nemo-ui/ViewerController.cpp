@@ -28,6 +28,13 @@
 #include <utility>
 namespace nemo::ui {
 namespace {
+// How long the transport waits before stating a preparation again for a frame
+// that has none in flight (its admission was refused, or the frame became
+// unrenderable and is renderable again). It is a bounded re-check, never a
+// render command: the clock does not advance here, and a frame that arrives
+// late is presented late rather than skipped. A frame whose preparation IS in
+// flight needs no timer at all — its own answer resumes the transport.
+constexpr auto kPlaybackRetry = std::chrono::milliseconds(16);
 const char* parameterTypeName(nemo::ParameterType type) {
     switch (type) {
     case nemo::ParameterType::Boolean:
@@ -1766,7 +1773,7 @@ void ViewerController::pollScheduler() {
         return;
     // Safety net, before the counter comparison below: playback must never stall
     // on a frame that was never submitted (an empty viewport that has since
-    // appeared, a rejected admission, a replaced target). advancePlayback()
+    // appeared, a rejected admission, a replaced target). pumpPlayback()
     // restores the transport when nothing renders, so this cannot walk the
     // playhead forward over frames that were not produced.
     if (playing_ && outstandingRequest_ == 0 && !playback_.isActive())
@@ -1807,6 +1814,9 @@ void ViewerController::invalidateRequest() {
     lastIntent_.reset();
     pending_ = false;
     outstandingRequest_ = 0;
+    // The ordered playback window is superseded with the latest-wins request:
+    // its preparations belong to the view that is being replaced.
+    clearPlaybackWindow();
     outdated_ = static_cast<bool>(presentation_);
     generation_ = ++nextRequestId_;
     rangeGeneration_ = 0;
@@ -3495,7 +3505,9 @@ void ViewerController::requestRange(int first, int last) {
         return;
     }
     // Range admission supersedes this destination's interactive work without
-    // a reply. A subsequent view refresh must not await that lost answer.
+    // a reply, and with it the ordered playback window: the range states the
+    // coverage demand this destination now works on.
+    clearPlaybackWindow();
     pending_ = false;
     outstandingRequest_ = 0;
     status_ = QStringLiteral("Caching requested range %1–%2; viewer identity unchanged").arg(first).arg(last);
@@ -3543,6 +3555,22 @@ void ViewerController::receive() {
     if (!result)
         return;
     pollScheduler();
+    if (auto* miss = std::get_if<ViewerReplayMiss>(&*result)) {
+        // The ordered playback window asked for this frame and the retained
+        // index has no representation for it. A frame the transport is due to
+        // show renders live; a prefetched neighbour is only marked, so it is
+        // never rendered speculatively.
+        if (PlaybackSlot* slot = playbackSlot(miss->requestId)) {
+            slot->request = 0;
+            slot->missing = true;
+            slot->ready.reset();
+            // The frame the clock is due to show has no retained
+            // representation: the transport decides what to do with it now.
+            if (playing_ && slot == &playbackWindow_.front())
+                pumpPlayback();
+        }
+        return;
+    }
     if (auto* failure = std::get_if<ViewerFailure>(&*result)) {
         if (failure->requestId != generation_ && failure->requestId != 0)
             return;
@@ -3645,45 +3673,29 @@ void ViewerController::receive() {
         refreshRequest();
     } else {
         auto frame = std::get<std::shared_ptr<const ViewerResult>>(std::move(*result));
+        // A frame of the ordered playback window (issue #106): it belongs to a
+        // preparation this panel is still walking to, so it is buffered by frame
+        // and presented by the transport clock in order — never published here,
+        // which is what keeps admitting frame N+1 from retiring frame N.
+        if (PlaybackSlot* slot = playbackSlot(frame->requestId)) {
+            slot->request = 0;
+            slot->missing = false;
+            slot->ready = std::move(frame);
+            if (playing_ && slot == &playbackWindow_.front())
+                pumpPlayback();
+            return;
+        }
         // The result must belong to the request this panel still owns and carry
         // the snapshot it was rendered from; generation_ already rejects work
         // issued before the authored document changed.
         if (frame->requestId != generation_ || frame->revision != submittedRevision_)
             return;
         outstandingRequest_ = 0;
-        // The delivered frame states the description it was actually produced
-        // from (issue #98): the layer and channel selectors, the layer reason
-        // and the display fallback read this memo, so the panel offers exactly
-        // the channels of the frame on screen. Resolution itself happened on
-        // the worker, against this same description.
-        const bool descriptionChanged = !targetDescription_ || !(targetDescription_->description == frame->description);
-        targetDescription_ = TargetDescription{frame->request.output, frame->request.localTime, frame->revision, true,
-                                               frame->description};
-        presentation_ = std::move(frame);
-        pending_ = false;
-        outdated_ = false;
-        effectiveScale_ = presentation_->request.samplingScale;
-        const auto aspect = static_cast<double>(presentation_->description.pixelAspect);
-        if (pixelAspect_ != aspect) {
-            pixelAspect_ = aspect;
-            emit sourceChanged();
-        }
-        error_.clear();
-        // The status line states what is on screen for evidence and for the
-        // panel's own states; it is never presented over the media while a
-        // request is in flight.
-        status_ = QStringLiteral("Displayed %1x%2, 1:%3, frame %4; %5; %6")
-                      .arg(presentation_->frame.width)
-                      .arg(presentation_->frame.height)
-                      .arg(effectiveScale_)
-                      .arg(presentation_->request.localTime)
-                      .arg(presentation_->cacheHit ? QStringLiteral("compressed cache") : QStringLiteral("live render"))
-                      .arg(sourceDescription_);
-        emit effectiveScaleChanged();
-        if (descriptionChanged)
-            emit displayChanged();
-        emit frameArrived();
-        emit statusChanged();
+        publishFrame(std::move(frame));
+        // An explicit seek/edit is latest-wins, not a member of the ordered
+        // window. Give its newly published frame its own interval as well.
+        if (playing_ && !playbackLive_)
+            playbackDue_ = std::chrono::steady_clock::now() + std::chrono::milliseconds(playbackInterval());
         // Playback advances on the displayed frame, never on a timer tick: the
         // frame just published is the predecessor of the next one.
         pumpPlayback();
@@ -3695,6 +3707,11 @@ void ViewerController::refreshRequest() {
     // it may not probe, submit, or cancel another panel's destination.
     if (!destination_)
         return;
+    // A refresh states what the panel wants NOW (a seek, an edit, a view or
+    // channel change, a new context): it supersedes the ordered playback window
+    // rather than queueing beside it, so obsolete read-ahead can never be
+    // presented after the newer demand.
+    clearPlaybackWindow();
     try {
         // Capture one immutable project state for the whole request. The
         // session remains owner-thread-only; workers receive this snapshot.
@@ -3859,27 +3876,10 @@ void ViewerController::refreshRequest() {
         // executes that same resolved plan, so no description round trip stands
         // between a frame and its render and the panel never frames a view with
         // a neighbouring frame's guess.
-        eval::ViewIntent intent;
-        intent.network = targetNetwork;
-        intent.target = target;
-        intent.localTime = frame_;
-        intent.mode = mode_ == "full"      ? ViewerResolution::Full
-                      : mode_ == "half"    ? ViewerResolution::Half
-                      : mode_ == "quarter" ? ViewerResolution::Quarter
-                                           : ViewerResolution::Auto;
-        intent.forceFullFrame = forceFullFrame_;
-        intent.zoom = zoom_;
-        intent.panX = pan_.x();
-        intent.panY = pan_.y();
-        intent.viewportWidth = viewport_.width();
-        intent.viewportHeight = viewport_.height();
-        intent.layer = layer_.toStdString();
-        intent.channel = channel_.toStdString();
+        eval::ViewIntent intent = viewIntentFor(targetNetwork, target, frame_, privateMediaSource);
         // The identity this panel compares is the AUTHORED one: a request-owned
         // media node is allocated fresh for each submission, while the routed
         // source key and the view are what the panel actually asked for.
-        if (privateMediaSource)
-            intent.target = kInvalidNode;
         if (lastIntent_ && *lastIntent_ == intent && lastRevision_ == revision)
             return;
         lastIntent_ = intent;
@@ -3910,6 +3910,26 @@ void ViewerController::refreshRequest() {
     } catch (const std::exception& error) {
         fail(QString::fromUtf8(error.what()));
     }
+}
+eval::ViewIntent ViewerController::viewIntentFor(NetworkId network, NodeId target, int frame,
+                                                 bool privateMediaSource) const {
+    eval::ViewIntent intent;
+    intent.network = network;
+    intent.target = privateMediaSource ? kInvalidNode : target;
+    intent.localTime = frame;
+    intent.mode = mode_ == "full"      ? ViewerResolution::Full
+                  : mode_ == "half"    ? ViewerResolution::Half
+                  : mode_ == "quarter" ? ViewerResolution::Quarter
+                                       : ViewerResolution::Auto;
+    intent.forceFullFrame = forceFullFrame_;
+    intent.zoom = zoom_;
+    intent.panX = pan_.x();
+    intent.panY = pan_.y();
+    intent.viewportWidth = viewport_.width();
+    intent.viewportHeight = viewport_.height();
+    intent.layer = layer_.toStdString();
+    intent.channel = channel_.toStdString();
+    return intent;
 }
 QRectF ViewerController::presentedRegion() const {
     if (!presentation_)
@@ -4097,7 +4117,10 @@ void ViewerController::play() {
     if (playing_)
         return;
     playing_ = true;
-    playbackDue_ = std::chrono::steady_clock::now();
+    // The first frame is due immediately, but its successful publication
+    // establishes the clock. Startup preparation time must not compress the
+    // first visible interval into a catch-up burst.
+    playbackDue_ = {};
     emit playbackChanged();
     pumpPlayback();
 }
@@ -4108,7 +4131,9 @@ void ViewerController::pause() {
     playback_.stop();
     // A frame already in flight is deliberately NOT cancelled: the composition
     // computed it, so it is published and displayed. Pausing only stops the
-    // loop advancing.
+    // loop advancing, and retires the read-ahead the transport is no longer
+    // walking to.
+    clearPlaybackWindow();
     emit playbackChanged();
 }
 void ViewerController::togglePlay() {
@@ -4606,55 +4631,274 @@ void ViewerController::setFrameRate(double rate) {
     if (playing_)
         pumpPlayback();
 }
+void ViewerController::setPlaybackDirection(PlaybackDirection direction) {
+    if (playbackDirection_ == direction)
+        return;
+    playbackDirection_ = direction;
+    // The window is a contiguous run in the transport's order, so changing that
+    // order retires it rather than presenting a frame out of sequence.
+    clearPlaybackWindow();
+    if (playing_)
+        pumpPlayback();
+}
+int ViewerController::nextPlaybackFrame() const {
+    if (frame_ < inFrame_ || frame_ > outFrame_)
+        return inFrame_;
+    return playbackFrameAfter(frame_);
+}
+int ViewerController::playbackFrameAfter(int frame) const {
+    if (playbackDirection_ == PlaybackDirection::Forward)
+        return frame >= outFrame_ ? inFrame_ : frame + 1;
+    return frame <= inFrame_ ? outFrame_ : frame - 1;
+}
+void ViewerController::clearPlaybackWindow() {
+    if (!playbackWindow_.empty() && destination_) {
+        // The window's preparations are retired where they were admitted, so a
+        // frame the transport has stopped walking to is never prepared,
+        // presented or left holding device resources.
+        runtime_->cancelPlayback(*destination_);
+    }
+    playbackWindow_.clear();
+    playbackContext_.reset();
+    playbackTarget_ = kInvalidNode;
+    playbackLive_ = false;
+    playbackUnderrunReported_ = false;
+}
+ViewerController::PlaybackSlot* ViewerController::playbackSlot(std::uint64_t request) {
+    if (request == 0)
+        return nullptr;
+    const auto found = std::find_if(playbackWindow_.begin(), playbackWindow_.end(),
+                                    [request](const auto& slot) { return slot.request == request; });
+    return found == playbackWindow_.end() ? nullptr : &*found;
+}
 void ViewerController::pumpPlayback() {
     if (!playing_)
         return;
     playback_.stop();
-    // The displayed-frame contract: a frame still being computed is never
-    // superseded, so playback waits for it instead of commanding another.
+    // Neither a live transport frame nor a latest-wins seek/edit may be
+    // overtaken by the playback window while its publication is outstanding.
     if (outstandingRequest_ != 0)
         return;
+    const bool livePublished = std::exchange(playbackLive_, false);
+    const auto interval = std::chrono::milliseconds(playbackInterval());
+    if (livePublished || presentReadyPlaybackFrame()) {
+        const auto now = std::chrono::steady_clock::now();
+        // Pace the following frame from this one's due time. A frame that
+        // overran its budget leaves the due time in the past, so the pace
+        // resumes from now instead of replaying the backlog as a burst; frames
+        // are still presented in order and none are skipped.
+        playbackDue_ += interval;
+        if (playbackDue_ <= now)
+            playbackDue_ = now + interval;
+    }
+    // Publishing either head advanced its deadline. Its successor must not
+    // inherit the previous head's already-due clock. Sample time after any
+    // publication and window construction, not before their work.
+    const auto window = ensurePlaybackWindow();
     const auto now = std::chrono::steady_clock::now();
-    if (playbackDue_ > now) {
-        // Frames are arriving ahead of the composition rate (cached replay):
-        // hold the rate rather than playing as fast as the cache allows.
-        playback_.start(std::chrono::duration_cast<std::chrono::milliseconds>(playbackDue_ - now));
+    const bool clockDue = playbackDue_ <= now;
+    switch (window) {
+    case PlaybackWindow::LiveFrame: {
+        // A live render is not read-ahead: it is commanded when the frame is
+        // DUE, exactly as the serial transport commanded its next frame.
+        if (!clockDue) {
+            playback_.start(std::chrono::duration_cast<std::chrono::milliseconds>(playbackDue_ - now));
+            return;
+        }
+        // This frame has no retained cache representation: the normal
+        // live-render path produces exactly this frame, one outstanding.
+        const int previous = frame_;
+        setFrame(nextPlaybackFrame());
+        if (outstandingRequest_ == 0) {
+            // Nothing was rendered: no viewport, no destination, or an
+            // empty or replaced target. Leave the transport where it was
+            // rather than walking it forward over a frame that was never
+            // produced.
+            if (frame_ != previous) {
+                frame_ = previous;
+                emit frameChanged();
+                emit timelineChanged();
+            }
+            return;
+        }
+        playbackLive_ = true;
         return;
     }
-    if (!advancePlayback())
-        playbackDue_ = now + std::chrono::milliseconds(playbackInterval());
-}
-bool ViewerController::advancePlayback() {
-    const int previous = frame_;
-    const int next = frame_ >= outFrame_ ? inFrame_ : frame_ + 1;
-    if (next == frame_) {
-        // A one-frame loop re-requests the frame already displayed. The
-        // identical-view guard would skip that submission and stall the loop,
-        // so it is cleared for this advance only.
-        lastIntent_.reset();
+    case PlaybackWindow::Unavailable:
+        return;
+    case PlaybackWindow::Prepared:
+        break;
     }
-    setFrame(next);
-    if (outstandingRequest_ == 0) {
-        // Nothing was rendered: no viewport, no destination, or an empty or
-        // replaced target. Leave the transport where it was rather than walking
-        // it forward over frames that were never produced.
-        if (frame_ != previous) {
-            frame_ = previous;
-            emit frameChanged();
-            emit timelineChanged();
+    if (playbackWindow_.empty() || !playbackWindow_.front().ready) {
+        // The frame the clock is due for is not ready. If it has a preparation
+        // in flight, its own answer resumes the transport; otherwise nothing was
+        // admitted for it yet, so look again shortly rather than commanding
+        // another frame.
+        if (!clockDue) {
+            playback_.start(std::chrono::duration_cast<std::chrono::milliseconds>(playbackDue_ - now));
+        } else {
+            if (!playbackUnderrunReported_) {
+                qInfo("Viewer playback underrun at frame %d: next frame is not ready", nextPlaybackFrame());
+                playbackUnderrunReported_ = true;
+            }
+            if (playbackWindow_.empty() || playbackWindow_.front().request == 0)
+                playback_.start(kPlaybackRetry);
         }
+        return;
+    }
+    const auto remaining = playbackDue_ > now ? playbackDue_ - now : std::chrono::milliseconds(0);
+    playback_.start(std::chrono::duration_cast<std::chrono::milliseconds>(remaining));
+}
+ViewerController::PlaybackWindow ViewerController::ensurePlaybackWindow() {
+    if (!destination_ || viewport_.isEmpty() || targetEmpty_)
+        return PlaybackWindow::Unavailable;
+    // Keep only the contiguous run that starts at the frame the clock is due to
+    // show: a seek, a loop wrap, a direction change or a mark edit moved the
+    // window's origin, and anything else would be presented out of order.
+    const int head = nextPlaybackFrame();
+    int expected = head;
+    for (std::size_t index = 0; index < playbackWindow_.size();) {
+        if (playbackWindow_[index].frame == expected) {
+            ++index;
+            expected = playbackFrameAfter(expected);
+            if (expected == head)
+                break;
+        } else {
+            playbackWindow_.erase(playbackWindow_.begin() + static_cast<std::ptrdiff_t>(index));
+        }
+    }
+    if (!playbackWindow_.empty() && playbackWindow_.front().missing)
+        return PlaybackWindow::LiveFrame;
+    // A frame with no preparation in flight — the one the clock is due for, or a
+    // slot whose admission was refused — is stated again, in transport order.
+    for (auto& slot : playbackWindow_) {
+        if (slot.request == 0 && !slot.ready && !slot.missing && !preparePlaybackFrame(slot))
+            return PlaybackWindow::Prepared;
+    }
+    // Read-ahead is gated on the previous frame's own answer: the next frame is
+    // stated once the frame before it is known to be replayable, and never past
+    // a frame the retained index does not know. That keeps the window full in
+    // the steady state — each answer arrives in a fraction of a frame interval —
+    // while a range the cache does not hold costs exactly one probe per frame
+    // and never a run of preparations the live render would have to retire.
+    while (playbackWindow_.size() < kPlaybackWindowFrames) {
+        const int frame = playbackWindow_.empty() ? head : playbackFrameAfter(playbackWindow_.back().frame);
+        if (!playbackWindow_.empty() && frame == head)
+            break;  // the window already covers the whole loop
+        if (!playbackWindow_.empty() && (!playbackWindow_.back().ready || playbackWindow_.back().missing))
+            break;
+        PlaybackSlot slot;
+        slot.frame = frame;
+        if (!preparePlaybackFrame(slot))
+            break;
+        playbackWindow_.push_back(std::move(slot));
+    }
+    // Nothing could be prepared at all: there is no view to play. The panel's
+    // own next event states one; this never commands a render.
+    return playbackWindow_.empty() ? PlaybackWindow::Unavailable : PlaybackWindow::Prepared;
+}
+bool ViewerController::preparePlaybackFrame(PlaybackSlot& slot) {
+    if (!destination_ || viewport_.isEmpty() || targetEmpty_)
+        return false;
+    try {
+        const bool privateMediaSource =
+            contextRole_ == ContextRole::Media && renderTargetNode() == kInvalidNode && !contextSourceKey_.empty();
+        if (!playbackContext_) {
+            Document document = session_.snapshot();
+            const auto target =
+                privateMediaSource ? adoptMediaSourceNode(document, contextSourceKey_) : renderTargetNode();
+            if (target == kInvalidNode)
+                return false;
+            playbackTarget_ = target;
+            playbackContext_.emplace(std::move(document));
+        }
+        const auto target = playbackTarget_;
+        const auto targetNetwork = renderTargetNetwork(*playbackContext_->document);
+        // The same immutable view intent a live render would state, so a
+        // replayed frame describes exactly the view the transport is walking
+        // through — the worker's retained record for that intent, not a second
+        // resolution of it. The identity form is kept for the "already
+        // displayed" comparison; only the submitted form names the request-owned
+        // media node.
+        auto identity = viewIntentFor(targetNetwork, target, slot.frame, privateMediaSource);
+        auto intent = identity;
+        if (privateMediaSource)
+            intent.target = target;
+        const auto id = ++nextRequestId_;
+        // The same immutable snapshot/stamp serves the whole playback context;
+        // time advancement does not copy or fingerprint the authored graph.
+        const auto revision = runtime_->prepareReplay(*playbackContext_, std::move(intent), id, *destination_,
+                                                      session_.colorConfigPath());
+        if (!revision)
+            return false;
+        slot.request = id;
+        slot.revision = *revision;
+        slot.intent = std::move(identity);
+        slot.missing = false;
+        slot.ready.reset();
+        return true;
+    } catch (const std::exception& error) {
+        fail(QString::fromUtf8(error.what()));
         return false;
     }
-    // Pace the following frame from this one's due time. A frame that overran
-    // its budget leaves the due time in the past, so the pace resumes from now
-    // instead of replaying the backlog as a burst; frames are still produced in
-    // order and none are skipped.
-    const auto interval = std::chrono::milliseconds(playbackInterval());
-    const auto now = std::chrono::steady_clock::now();
-    playbackDue_ += interval;
-    if (playbackDue_ <= now)
-        playbackDue_ = now + interval;
+}
+bool ViewerController::presentReadyPlaybackFrame() {
+    if (playbackDue_ > std::chrono::steady_clock::now())
+        return false;
+    if (playbackWindow_.empty() || !playbackWindow_.front().ready)
+        return false;
+    auto slot = std::move(playbackWindow_.front());
+    playbackWindow_.pop_front();
+    // The window's head is the transport's next step, so the identity a later
+    // interactive refresh compares against is this presented view.
+    lastIntent_ = std::move(slot.intent);
+    lastRevision_ = slot.revision;
+    publishFrame(std::move(slot.ready));
     return true;
+}
+void ViewerController::publishFrame(std::shared_ptr<const ViewerResult> frame) {
+    // The transport advances on the frame that is actually presented, whatever
+    // produced it: a live render or a retained replay preparation.
+    const int presented = static_cast<int>(frame->request.localTime);
+    const bool moved = frame_ != presented;
+    frame_ = presented;
+    // The delivered frame states the description it was actually produced
+    // from (issue #98): the layer and channel selectors, the layer reason
+    // and the display fallback read this memo, so the panel offers exactly
+    // the channels of the frame on screen.
+    const bool descriptionChanged = !targetDescription_ || !(targetDescription_->description == frame->description);
+    targetDescription_ =
+        TargetDescription{frame->request.output, frame->request.localTime, frame->revision, true, frame->description};
+    presentation_ = std::move(frame);
+    playbackUnderrunReported_ = false;
+    pending_ = false;
+    outdated_ = false;
+    effectiveScale_ = presentation_->request.samplingScale;
+    const auto aspect = static_cast<double>(presentation_->description.pixelAspect);
+    if (pixelAspect_ != aspect) {
+        pixelAspect_ = aspect;
+        emit sourceChanged();
+    }
+    error_.clear();
+    // The status line states what is on screen for evidence and for the
+    // panel's own states; it is never presented over the media while a
+    // request is in flight.
+    status_ = QStringLiteral("Displayed %1x%2, 1:%3, frame %4; %5; %6")
+                  .arg(presentation_->frame.width)
+                  .arg(presentation_->frame.height)
+                  .arg(effectiveScale_)
+                  .arg(presentation_->request.localTime)
+                  .arg(presentation_->cacheHit ? QStringLiteral("compressed cache") : QStringLiteral("live render"))
+                  .arg(sourceDescription_);
+    if (moved) {
+        emit frameChanged();
+        emit timelineChanged();
+    }
+    emit effectiveScaleChanged();
+    if (descriptionChanged)
+        emit displayChanged();
+    emit frameArrived();
+    emit statusChanged();
 }
 void ViewerController::viewportChanged(QSizeF pixels) {
     if (viewport_ == pixels)
@@ -4697,6 +4941,7 @@ void ViewerController::fail(QString message) {
     error_ = std::move(message);
     pending_ = false;
     outstandingRequest_ = 0;
+    clearPlaybackWindow();
     outdated_ = static_cast<bool>(presentation_);
     status_ = presentation_ ? QStringLiteral("Failed; displayed frame is outdated") : QStringLiteral("Failed");
     emit statusChanged();

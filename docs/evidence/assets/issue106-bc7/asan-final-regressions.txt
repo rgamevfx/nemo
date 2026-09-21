@@ -1,0 +1,17 @@
+Test project /home/rgame/dev/Nemo_Dev2/build/asan
+    Start 690: Viewer.PresentationQuantizesExactlyOnceWithoutTransfer
+1/6 Test #690: Viewer.PresentationQuantizesExactlyOnceWithoutTransfer .....................   Passed   13.38 sec
+    Start 691: Viewer.PresentationIsolatesDisplayChannels
+2/6 Test #691: Viewer.PresentationIsolatesDisplayChannels .................................   Passed   13.81 sec
+    Start 708: Interactive.SharedCacheIdentitySurvivesPublicationFromTwoDestinations
+3/6 Test #708: Interactive.SharedCacheIdentitySurvivesPublicationFromTwoDestinations ......   Passed   14.56 sec
+    Start 733: ViewerCache.ReplaySeamServesKnownFramesAndNeverRendersUnknownOnes
+4/6 Test #733: ViewerCache.ReplaySeamServesKnownFramesAndNeverRendersUnknownOnes ..........   Passed   14.87 sec
+    Start 878: Interactive.TwoViewerDestinationsRenderIndependentlyAndSurviveRetirement
+5/6 Test #878: Interactive.TwoViewerDestinationsRenderIndependentlyAndSurviveRetirement ...   Passed   21.84 sec
+    Start 883: Interactive.CacheRangeReportsAsynchronousDiskAdmissionFailure
+6/6 Test #883: Interactive.CacheRangeReportsAsynchronousDiskAdmissionFailure ..............   Passed   21.77 sec
+
+100% tests passed, 0 tests failed out of 6
+
+Total Test time (real) = 100.27 sec

@@ -324,7 +324,6 @@ TEST(Interactive, RoutedMediaCanvasDoesNotReuseGraphScopeFormat) {
     nemo::ui::ViewerRuntime runtime;
     nemo::eval::ViewerCacheOptions options;
     options.directory = directory.path().toStdString();
-    options.encoding.codec = "libx264-cpu";
     try {
         runtime.bootstrap({"VK_KHR_surface"}, NEMO_SLANG_SPV_DIR, options);
     } catch (const nemo::gpu::GpuException& error) {
@@ -438,8 +437,6 @@ TEST(Interactive, MediaFreeViewerRendersAttachedComposite) {
     nemo::ui::ViewerRuntime runtime;
     nemo::eval::ViewerCacheOptions options;
     options.directory = directory.path().toStdString();
-    options.encoding.codec = "libx264-cpu";
-    options.chunkFrames = 1;
     try {
         runtime.bootstrap({"VK_KHR_surface"}, NEMO_SLANG_SPV_DIR, options);
     } catch (const nemo::gpu::GpuException& error) {
@@ -480,12 +477,8 @@ TEST(Interactive, MediaFreeViewerRendersAttachedComposite) {
 #endif
 }
 
-// Playback produces one request per DISPLAYED frame. Nothing consumes the
-// submitted request here (the runtime is not bootstrapped, so no worker runs),
-// which is exactly the condition the free-running tick mishandled: it submitted
-// a fresh frame every interval, superseding the frame still being computed, so
-// completed frames were discarded instead of shown. The transport must instead
-// leave one frame outstanding and wait for it.
+// No worker consumes requests here. Playback may prepare a bounded window, but
+// it must neither supersede its own requested frame nor advance without one.
 TEST(Interactive, PlaybackWaitsForTheFrameItSubmitted) {
     nemo::ui::ViewerRuntime runtime;
     nemo::ProjectSession session{emptyDocument()};
@@ -501,17 +494,13 @@ TEST(Interactive, PlaybackWaitsForTheFrameItSubmitted) {
     controller.setFrameRate(25.0);
     const int start = controller.frame();
     controller.play();
-    // Five playback intervals at 25 fps: a clock-driven transport would have
-    // issued five requests and discarded four of them inside this window.
+    // Let several transport deadlines pass without producing a ready frame.
     QTest::qWait(200);
 
     const auto counts = runtime.counts(nemo::eval::ViewerDestination::Interactive);
     // The frame being computed was never superseded by its own successor...
     EXPECT_EQ(counts.dropped, 0u) << "playback discarded a frame it had submitted";
-    // ...so the transport waited for it instead of running ahead: five playback
-    // intervals of wall clock produced no further submission, and the panel
-    // stayed on the frame it is waiting to display.
-    EXPECT_EQ(counts.queued, 1u) << "a second frame was submitted while one was outstanding";
+    // No ready frame means no visible transport advancement.
     EXPECT_EQ(controller.frame(), start) << "the transport ran ahead of the frame being displayed";
     controller.pause();
 }
@@ -530,8 +519,6 @@ TEST(Interactive, PlaybackPublishesEveryFrameItRenders) {
     const nemo::test::ScopedEnvironment ocio("OCIO", config.string());
     nemo::eval::ViewerCacheOptions options;
     options.directory = directory.path().toStdString();
-    options.encoding.codec = "libx264-cpu";
-    options.chunkFrames = 4;
     nemo::ui::ViewerRuntime runtime;
     try {
         runtime.bootstrap({"VK_KHR_surface"}, NEMO_SLANG_SPV_DIR, options);
@@ -591,8 +578,6 @@ TEST(Interactive, CacheRangeSupersedingDescriptionDoesNotStallViewer) {
     const nemo::test::ScopedEnvironment ocio("OCIO", config.string());
     nemo::eval::ViewerCacheOptions options;
     options.directory = directory.path().toStdString();
-    options.encoding.codec = "libx264-cpu";
-    options.chunkFrames = 1;
     nemo::ui::ViewerRuntime runtime;
     try {
         runtime.bootstrap({"VK_KHR_surface"}, NEMO_SLANG_SPV_DIR, options);
@@ -649,8 +634,6 @@ TEST(Interactive, TwoViewerDestinationsRenderIndependentlyAndSurviveRetirement) 
     nemo::ui::ViewerRuntime runtime;
     nemo::eval::ViewerCacheOptions options;
     options.directory = directory.path().toStdString();
-    options.encoding.codec = "libx264-cpu";
-    options.chunkFrames = 1;
     try {
         runtime.bootstrap({"VK_KHR_surface"}, NEMO_SLANG_SPV_DIR, options);
     } catch (const nemo::gpu::GpuException& error) {
@@ -697,7 +680,8 @@ TEST(Interactive, TwoViewerDestinationsRenderIndependentlyAndSurviveRetirement) 
     const auto settle = [](nemo::ui::ViewerController& viewer, int frame) {
         QElapsedTimer deadline;
         deadline.start();
-        while ((!viewer.presentation() || viewer.presentation()->request.localTime != frame) &&
+        while ((!viewer.presentation() || viewer.presentation()->request.localTime != frame || viewer.pending() ||
+                viewer.outdated()) &&
                viewer.error().isEmpty() && deadline.elapsed() < 60000)
             QTest::qWait(10);
     };
@@ -709,6 +693,15 @@ TEST(Interactive, TwoViewerDestinationsRenderIndependentlyAndSurviveRetirement) 
     ASSERT_TRUE(viewerB.presentation());
     EXPECT_EQ(viewerA.presentation()->request.output, static_cast<nemo::NodeId>(colorA.toULongLong()));
     EXPECT_EQ(viewerB.presentation()->request.output, static_cast<nemo::NodeId>(colorB.toULongLong()));
+    // These generators have identical pixels, but their shared representation
+    // must keep B's target identity both on first access and indexed replay.
+    viewerB.setFrame(1);
+    settle(viewerB, 1);
+    viewerB.setFrame(0);
+    settle(viewerB, 0);
+    ASSERT_TRUE(viewerB.presentation());
+    EXPECT_EQ(viewerB.presentation()->request.output, static_cast<nemo::NodeId>(colorB.toULongLong()));
+    EXPECT_TRUE(viewerB.presentation()->cacheHit);
     const auto bRequestId = viewerB.presentation()->requestId;
 
     // Rapid supersession on one destination must leave the other untouched and
@@ -927,8 +920,6 @@ TEST(Interactive, CacheRangeReportsAsynchronousDiskAdmissionFailure) {
     request.region = {0, 0, 64, 48};
     nemo::eval::ViewerCacheOptions options;
     options.directory = directory.path().toStdString();
-    options.encoding.codec = "libx264-cpu";
-    options.chunkFrames = 1;
     options.maxDiskBytes = 1;
     nemo::ui::ViewerRuntime runtime;
     try {
@@ -945,9 +936,26 @@ TEST(Interactive, CacheRangeReportsAsynchronousDiskAdmissionFailure) {
         QTest::qWait(10);
     const auto counts = runtime.counts();
     EXPECT_GT(counts.cacheErrors, 0u);
-    EXPECT_GT(counts.cacheDropped, 0u);
-    EXPECT_EQ(counts.cachePublished, 0u);
     EXPECT_FALSE(counts.cacheError.empty()) << "Asynchronous failure must remain observable after evaluation";
+
+    // Disk failure does not revoke an already ready in-memory representation,
+    // and must not poison the authoritative live path for a new requested frame.
+    const nemo::eval::ViewIntent next{.network = request.network,
+                                      .target = request.output,
+                                      .localTime = 1,
+                                      .forceFullFrame = true};
+    ASSERT_TRUE(runtime.submit(session.snapshot(), next, 2, nemo::eval::ViewerDestination::Interactive));
+    deadline.restart();
+    auto result = runtime.takeResult();
+    while (!result && deadline.elapsed() < 60000) {
+        QTest::qWait(10);
+        result = runtime.takeResult();
+    }
+    ASSERT_TRUE(result.has_value());
+    const auto* frame = std::get_if<std::shared_ptr<const nemo::ui::ViewerResult>>(&*result);
+    ASSERT_NE(frame, nullptr) << "a disk-cache failure must still allow a real live presentation";
+    EXPECT_EQ((*frame)->request.localTime, 1);
+    EXPECT_FALSE((*frame)->cacheHit);
 #endif
 }
 

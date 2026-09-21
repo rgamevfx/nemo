@@ -1,7 +1,9 @@
 #pragma once
 
 #include <array>
+#include <atomic>
 #include <cstdint>
+#include <deque>
 #include <filesystem>
 #include <functional>
 #include <map>
@@ -17,6 +19,7 @@
 #include "nemo/eval/SourceSession.hpp"
 #include "nemo/eval/ViewIntent.hpp"
 #include "nemo/eval/ViewerCache.hpp"
+#include "nemo/gpu/Bc7.hpp"
 #include "nemo/gpu/GpuViewingTransform.hpp"
 #include "nemo/media/ViewingTransform.hpp"
 
@@ -42,7 +45,16 @@ struct ViewerProjection {
 struct ViewerFrame {
     // Immutable, completed display-referred output. Presentation and the
     // asynchronous viewer cache share this ownership; no image copy occurs.
+    //
+    // A frame carries EXACTLY ONE representation, honestly typed (issue #106):
+    // `image` is the live display-referred float result of an executed graph,
+    // `replay` is the compressed BC7 frame a validated cached representation
+    // was sampled from. A replay is never a float working image and is never an
+    // effect input, an accurate picker source or a full-quality bake, so a
+    // consumer branches on which one it holds instead of reinterpreting one as
+    // the other.
     std::shared_ptr<const gpu::Image> image;
+    std::shared_ptr<const gpu::Bc7Image> replay;
     ImageLayout layout;
     // The described output this frame was produced from (issue #88): its actual
     // format, data bounds, pixel aspect, channels and interpretation. Framing
@@ -53,7 +65,7 @@ struct ViewerFrame {
     std::uint64_t revision{};
     std::uint64_t requestId{};
     bool cacheHit{false};
-    // Accepted for asynchronous encoding, not proof of a persisted chunk.
+    // Accepted for asynchronous encoding, not proof of a persisted frame.
     bool cacheQueued{false};
     // The presentation-only display isolation the view asked for (issue #98):
     // RGBA presents the stored RGB opaquely (issue #99), a single identified
@@ -64,16 +76,47 @@ struct ViewerFrame {
     gpu::ViewerChannel presentationChannel{gpu::ViewerChannel::RGBA};
 };
 
+// A validated compressed representation of this exact demand exists, but its
+// asynchronous preparation (compressed blocks read/uploaded into the bounded
+// ready set) has not finished (issue #106). It is NOT a cache miss: the caller
+// must retry the same render rather than fall back to the live graph, so an
+// ordinary playback tick can never turn in-flight replay work into a render —
+// or a second one. A headless caller polls/retries explicitly; the interactive
+// runtime keeps the work pending. The exception carries the identity of the
+// representation being prepared, so a caller can coalesce it with the work it
+// already has instead of inventing a new one.
+struct ViewerReplayPending : std::runtime_error {
+    ViewerReplayPending(std::string identity, std::string message)
+        : std::runtime_error(std::move(message)), identity(std::move(identity)) {}
+
+    std::string identity;
+};
+
 // Worker-confined orchestration over the shared native dependency plan:
 // source decode -> native effects -> GPU OCIO. No routine host readback; the
 // only device-to-host transfer is the on-demand viewport sample below.
 // Matching scene-linear results reuse #9's cache; distinct representations
 // coexist. Returned display images are immutable and ready for presentation.
 // timeout_ns bounds individual GPU waits, not CPU decoding/compilation or
-// the total request. Cache compression is always asynchronous.
+// the total request. Cache preparation is always asynchronous. Both render
+// entry points are worker-confined; the replay call below is the one
+// nonblocking query a playback window may make from another thread.
 class ViewerSession {
 public:
     using CachePublicationGuard = std::function<bool()>;
+
+    // Foreground construction scope (issue #106): while one is alive, the
+    // session's asynchronous cache writer defers its own GPU submissions (block
+    // encode, compressed upload) so a live frame's presentation construction
+    // wins the shared device queue. It is a construction gate, not a device
+    // wait: the writer keeps its CPU-side work and submits as soon as the scope
+    // ends. The runtime takes it around a live render plus the presentation it
+    // builds from that frame, on the worker thread only; it never blocks on
+    // anything and never touches the GUI. The scope belongs to the cache that
+    // owns the writer — this forwards it under that existing ownership, and a
+    // session without a configured cache returns an empty scope, so holding one
+    // is always safe.
+    [[nodiscard]] ViewerCache::ForegroundScope foregroundScope();
 
     // `ocioConfigPath` is the project's authored color configuration. Empty
     // keeps the OCIO application default: the $OCIO environment variable is
@@ -125,6 +168,27 @@ public:
                                      std::uint64_t generation = 0,
                                      ViewerDestination destination = ViewerDestination::Interactive,
                                      CachePublicationGuard publicationGuard = {});
+    // The replay-only preparation call (issue #106): the seam the playback
+    // window uses to prepare a KNOWN frame or neighbour while transport keeps
+    // running. It never describes, plans, evaluates or encodes — a neighbour
+    // whose representation is not already validated and ready is simply not
+    // replayable, so a speculative frame can never pull the heavy graph in
+    // behind a playback tick. Nonblocking on any thread; see the declaration
+    // above for the exact answers.
+    //
+    // `snapshotRevision` is `Document::stateRevision()` of the immutable
+    // document snapshot this demand belongs to, computed once by the owner of
+    // that snapshot (the scheduler hashes it at admission). It is the snapshot's
+    // identity here — never a scheduler id or a request generation — so an
+    // ordinary playback tick never fingerprints the document again, and the
+    // served frame reports exactly this revision.
+    [[nodiscard]] std::optional<ViewerFrame> replay(const ViewIntent& intent, std::uint64_t snapshotRevision,
+                                                    ViewerDestination destination = ViewerDestination::Interactive);
+    // Replay a previously resolved concrete headless demand under the same
+    // immutable stamp. Like the view-intent form, this never receives or plans
+    // a Document; an unknown demand is a miss, not permission to render.
+    [[nodiscard]] std::optional<ViewerFrame> replay(const EvaluationRequest& request, std::uint64_t snapshotRevision,
+                                                    ViewerDestination destination = ViewerDestination::Interactive);
     // Worker-only metadata query (issue #88): the target's authored output
     // description — its actual format, data bounds, pixel aspect, channels and
     // interpretation — resolved through the same shared dependency planner the
@@ -160,8 +224,8 @@ public:
     // must invoke this boundary after replacing the configuration.
     void refreshColorConfig();
 
-    // Shutdown/headless drain only; throws when asynchronous encode/mux/cache
-    // admission reported an error.
+    // Shutdown/headless drain only; throws when asynchronous cache preparation
+    // reported an error.
     void flushCache();
     [[nodiscard]] ViewerCacheCounts cacheCounts() const;
     [[nodiscard]] std::optional<ViewerCacheCounts> tryCacheCounts() const;
@@ -190,24 +254,121 @@ private:
         std::string identity;
         std::unique_ptr<gpu::GpuViewingTransform> transform;
     };
+    [[nodiscard]] ViewingState& viewingStateFor(const ColorPolicy& policy);
+    // freshnessMutex_ is held by callers.
+    std::uint64_t& generationForLocked(ViewerDestination destination);
+
+    // Validated per-frame metadata (issue #106). One record per resolved
+    // demand holds what that demand actually resolved to: the canonical request,
+    // the frame's REAL description (a time-varying raster is stored per frame,
+    // never assumed range-wide), the effective representation identity derived
+    // from the frame's content key, the display isolation its view stated, and
+    // the document snapshot plus colour configuration the record was validated
+    // against. Records are reachable by three keys into the same store: the full
+    // view intent, the canonical concrete request, and the FRAME IDENTITY
+    // (network, target, local time). The frame identity is the one both render
+    // paths share, so a frame first visited through the concrete-request path —
+    // an explicitly populated cache range — is already the frame an equivalent
+    // view asks for: the intent is resolved against the stored description at
+    // the record's own density (pure arithmetic, no graph description, no
+    // planning) and served when the two agree. While the snapshot and colour
+    // stamps are unchanged a matching record IS the resolution, so an ordinary
+    // playback tick looks the representation up instead of describing and
+    // planning the graph again. Any edit moves the document stamp and the demand
+    // is resolved again from the current snapshot, which recomputes the effective
+    // key: an unchanged key still hits the frame the cache holds while unrelated
+    // valid siblings stay eligible, so a stale session-wide stamp or a naked
+    // frame number can never serve the wrong representation.
+    struct FrameRecord {
+        EvaluationRequest request;
+        ImageDescription description;
+        std::string cacheIdentity;
+        std::uint64_t documentRevision{};
+        std::string colorIdentity;
+        gpu::ViewerChannel presentationChannel{gpu::ViewerChannel::RGBA};
+    };
+
+    // One request's freshness ticket, taken before any lookup or execution.
+    struct RequestTicket {
+        std::uint64_t requestId{};
+        std::uint64_t revision{};
+        std::uint64_t generation{};
+    };
+
+    // One frame's validated record, matched against a view: the record itself
+    // plus the presentation-only isolation THAT VIEW states. The isolation is
+    // deliberately not part of the match, because it is applied when the frame
+    // is presented and never changes what was evaluated or stored — the
+    // representation the record holds is the same image either way.
+    struct FrameMatch {
+        std::shared_ptr<const FrameRecord> record;
+        gpu::ViewerChannel presentationChannel{gpu::ViewerChannel::RGBA};
+    };
+
+    [[nodiscard]] static std::string intentRecordKey(ViewerDestination destination, const ViewIntent& intent);
+    [[nodiscard]] static std::string requestRecordKey(ViewerDestination destination, const EvaluationRequest& request);
+    // The frame identity both render paths share: one target at one local time.
+    // It carries no destination, because what a frame IS does not depend on
+    // which panel or which range fill asked for it.
+    [[nodiscard]] static std::string frameRecordKey(const EvaluationRequest& request);
+    // The frame's own validated record when the view asks for exactly what it
+    // holds: the intent is resolved against the stored description with the
+    // SAME demand arithmetic the render path uses, at the record's own density,
+    // so only an equivalent demand can be served from it. An empty channel
+    // demand is compared as the set it means (every channel the image names), so
+    // a frame filled by a concrete request that named no channels matches the
+    // view that names exactly those channels. An explicit resolution mode must
+    // agree with the recorded density; an Auto view accepts the validated
+    // representation, which is why returning to a frame never refines it. A view
+    // that addresses nothing this frame carries is NOT served here: the caller's
+    // cold path reports that with a fresh description the panel can adopt.
+    [[nodiscard]] std::optional<FrameMatch> frameRecordForIntent(const ViewIntent& intent, std::uint64_t revision,
+                                                                 const std::string& colorIdentity) const;
+    // The record for `key` when it is still validated against this document
+    // snapshot and colour configuration; otherwise nothing and the caller
+    // resolves the demand again. Records are immutable and shared, so a lookup
+    // never copies one and a concurrent reader keeps the record it holds valid.
+    [[nodiscard]] std::optional<std::shared_ptr<const FrameRecord>>
+    findRecord(const std::string& key, std::uint64_t revision, const std::string& colorIdentity) const;
+    void record(const std::string& key, FrameRecord entry);
+    void forgetRecords();
+    // Serves one validated record: the typed replay frame when its compressed
+    // representation is ready, ViewerReplayPending while it is still loading,
+    // and nothing when it must be produced again. `presentationChannel` is the
+    // isolation the CALLER's view states — it is applied when the frame is
+    // presented and never changes what was stored, so a record may be served to
+    // a view that isolates a different channel of the same evaluated image.
+    [[nodiscard]] std::optional<ViewerFrame> serveRecorded(const FrameRecord& record, const RequestTicket& ticket,
+                                                           gpu::ViewerChannel presentationChannel);
+    // Share only the compressed representation, not its producer's target:
+    // the validated consumer request and description remain authoritative.
+    [[nodiscard]] static ViewerFrame replayFrame(const ViewerCacheResult& result, const EvaluationRequest& request,
+                                                 const ImageDescription& description, gpu::ViewerChannel channel,
+                                                 std::uint64_t requestId, std::uint64_t revision);
+    // Advances this destination's publication freshness and the cache's
+    // supersession watermark for one request. Taken before every lookup and
+    // execution, so an abandoned older request can never publish.
+    [[nodiscard]] RequestTicket beginRequest(const Document& document, std::uint64_t generation,
+                                             ViewerDestination destination);
     // The shared execution body of both render entry points: validates the
     // concrete request, plans (or adopts) exactly one region plan, keys it,
     // executes it and turns the result into the displayed representation.
     // `described` is the description plan the view-intent path already resolved
     // for this document, target and local time; the concrete-request path
-    // leaves it empty and is planned here.
+    // leaves it empty and is planned here. `recordKey` is the full demand's
+    // index key; the resolved metadata is published under it, so the next tick
+    // for the same demand resolves nothing. Empty means do not index.
     [[nodiscard]] ViewerFrame renderResolved(const Document& document, const EvaluationRequest& request,
-                                             std::optional<ImageDescriptionPlan> described, std::uint64_t timeout_ns,
-                                             std::uint64_t generation, ViewerDestination destination,
-                                             CachePublicationGuard publicationGuard,
+                                             std::optional<ImageDescriptionPlan> described, std::string recordKey,
+                                             std::uint64_t timeout_ns, RequestTicket ticket,
+                                             ViewerDestination destination, CachePublicationGuard publicationGuard,
                                              gpu::ViewerChannel presentationChannel);
-    [[nodiscard]] ViewingState& viewingStateFor(const ColorPolicy& policy);
-    // freshnessMutex_ is held by callers.
-    std::uint64_t& generationForLocked(ViewerDestination destination);
+
     gpu::Instance& instance_;
     gpu::Device& device_;
     gpu::Allocator& allocator_;
     std::string ocioConfigPath_;  // Resolve $OCIO on first viewing request.
+    std::filesystem::path shaderDirectory_;
     std::filesystem::path replayShader_;
     SourceSession sources_;
     EffectLibrary effects_;
@@ -219,7 +380,16 @@ private:
     mutable std::mutex cacheMutex_;
     std::unique_ptr<ViewerCache> cache_;
     mutable std::mutex freshnessMutex_;
-    std::uint64_t nextRequestId_{1};
+    // Worker-confined renders and cross-thread replay probes share this
+    // counter, so it is atomic rather than merely monotonic.
+    std::atomic<std::uint64_t> nextRequestId_{1};
+    // Bounded validated-record index. Dropping the oldest record costs one
+    // re-resolve of a demand that is no longer being played; it never changes
+    // which representation a demand resolves to.
+    static constexpr std::size_t kMaxFrameRecords = 4096;
+    mutable std::mutex recordsMutex_;
+    std::map<std::string, std::shared_ptr<const FrameRecord>> records_;
+    std::deque<std::string> recordOrder_;
 };
 
 }  // namespace nemo::eval

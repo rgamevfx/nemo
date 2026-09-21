@@ -5,7 +5,6 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
-#include <limits>
 #include <string>
 #include <utility>
 #include <vector>
@@ -201,14 +200,13 @@ constexpr std::uint32_t kDecodedChannels = kImageChannels;
     return 3;
 }
 
-// One decoded frame → RGBA float32. `linearize` selects the contract: the
-// source path inverts the declared transfer into scene-linear Rec.709;
-// viewer replay keeps the baked display-referred R′G′B′ untouched. The
-// frame's actual pixel format is validated BEFORE any plane access. When
-// `decodedFormat`/`decodedPlanes` are non-null they receive that validated
-// format name and plane count, so callers do not re-derive them.
+// One decoded frame → RGBA float32. The source contract inverts the declared
+// transfer into scene-linear Rec.709. The frame's actual pixel format is
+// validated BEFORE any plane access. When `decodedFormat`/`decodedPlanes` are
+// non-null they receive that validated format name and plane count, so callers
+// do not re-derive them.
 [[nodiscard]] CpuImage convertDecodedFrame(const AVFrame* frame, const MediaColorMetadata& color,
-                                           const std::string& clip, bool linearize, int width = 0, int height = 0,
+                                           const std::string& clip, int width = 0, int height = 0,
                                            std::string* decodedFormat = nullptr, int* decodedPlanes = nullptr,
                                            const ResolvedInputColor* rgb = nullptr) {
     const FormatSpec* spec = requireFormatSpec(static_cast<AVPixelFormat>(frame->format), clip);
@@ -267,11 +265,10 @@ constexpr std::uint32_t kDecodedChannels = kImageChannels;
         width = frame->width;
     if (height == 0)
         height = frame->height;
-    // Raw/Data samples are non-color data; the viewer-replay path is
-    // display-referred; everything else is working-space scene-linear.
+    // Raw/Data samples are non-color data; everything else is working-space
+    // scene-linear.
     const ColorInterpretation interpretation =
-        !linearize ? ColorInterpretation::DisplayReferred
-                   : (rgb != nullptr && rgb->raw() ? ColorInterpretation::Data : ColorInterpretation::SceneLinear);
+        rgb != nullptr && rgb->raw() ? ColorInterpretation::Data : ColorInterpretation::SceneLinear;
     CpuImage image(ImageLayout{.width = width, .height = height, .color = interpretation});
     for (int outputY = 0; outputY < height; ++outputY) {
         const int y = static_cast<int>((static_cast<int64_t>(outputY) * 2 + 1) * frame->height / (2 * height));
@@ -291,18 +288,16 @@ constexpr std::uint32_t kDecodedChannels = kImageChannels;
             float r = yy + (bt601 ? 1.402F : 1.5748F) * vv;
             float g = yy - (bt601 ? 0.344136F : 0.187324F) * uu - (bt601 ? 0.714136F : 0.468124F) * vv;
             float b = yy + (bt601 ? 1.772F : 1.8556F) * uu;
-            if (linearize) {
-                // An OCIO input color space or a Raw bypass leaves the encoded
-                // R'G'B' untouched here: the shared input-color conversion (or
-                // the bypass) is applied exactly once, right after this layout
-                // step. The Y'CbCr matrix/range expansion above is mandatory
-                // decoding and is never skipped.
-                if (rgb == nullptr || (!rgb->ocio() && !rgb->raw())) {
-                    const ImageTransfer transfer = rgb != nullptr ? rgb->transfer : toImageTransfer(color.transfer);
-                    r = imageTransferToLinear(r, transfer);
-                    g = imageTransferToLinear(g, transfer);
-                    b = imageTransferToLinear(b, transfer);
-                }
+            // An OCIO input color space or a Raw bypass leaves the encoded
+            // R'G'B' untouched here: the shared input-color conversion (or
+            // the bypass) is applied exactly once, right after this layout
+            // step. The Y'CbCr matrix/range expansion above is mandatory
+            // decoding and is never skipped.
+            if (rgb == nullptr || (!rgb->ocio() && !rgb->raw())) {
+                const ImageTransfer transfer = rgb != nullptr ? rgb->transfer : toImageTransfer(color.transfer);
+                r = imageTransferToLinear(r, transfer);
+                g = imageTransferToLinear(g, transfer);
+                b = imageTransferToLinear(b, transfer);
             }
             image.setPixel(outputX, outputY, {r, g, b, 1.0F});
         }
@@ -607,91 +602,17 @@ struct DecodeColor {
     return rate.num != 0 ? static_cast<double>(rate.num) / static_cast<double>(rate.den) : 0.0;
 }
 
-struct MemoryReader {
-    std::shared_ptr<const std::vector<std::uint8_t>> bytes;
-    AVIOContext* io{nullptr};
-    std::size_t position{0};
-
-    explicit MemoryReader(std::shared_ptr<const std::vector<std::uint8_t>> data) : bytes(std::move(data)) {}
-    ~MemoryReader() { avio_context_free(&io); }
-
-    static int read(void* opaque, unsigned char* buffer, int bufferSize) {
-        auto& reader = *static_cast<MemoryReader*>(opaque);
-        if (buffer == nullptr || bufferSize <= 0)
-            return AVERROR(EINVAL);
-        if (reader.position >= reader.bytes->size())
-            return AVERROR_EOF;
-        const std::size_t available = reader.bytes->size() - reader.position;
-        const std::size_t amount = std::min(available, static_cast<std::size_t>(bufferSize));
-        std::memcpy(buffer, reader.bytes->data() + reader.position, amount);
-        reader.position += amount;
-        return static_cast<int>(amount);
-    }
-
-    static int64_t seek(void* opaque, int64_t offset, int whence) {
-        auto& reader = *static_cast<MemoryReader*>(opaque);
-        if ((whence & AVSEEK_SIZE) != 0)
-            return static_cast<int64_t>(reader.bytes->size());
-        whence &= ~AVSEEK_FORCE;
-        int64_t base = 0;
-        if (whence == SEEK_CUR)
-            base = static_cast<int64_t>(reader.position);
-        else if (whence == SEEK_END)
-            base = static_cast<int64_t>(reader.bytes->size());
-        else if (whence != SEEK_SET)
-            return -1;
-        if (offset > 0 && base > std::numeric_limits<int64_t>::max() - offset)
-            return -1;
-        if (offset < 0 && (offset == std::numeric_limits<int64_t>::min() || base < -offset))
-            return -1;
-        const int64_t target = base + offset;
-        if (target < 0 || static_cast<std::uint64_t>(target) > reader.bytes->size())
-            return -1;
-        reader.position = static_cast<std::size_t>(target);
-        return target;
-    }
-
-    void open(const std::string& name) {
-        constexpr int bufferSize = 32 * 1024;
-        auto* buffer = static_cast<unsigned char*>(av_malloc(bufferSize));
-        if (buffer == nullptr)
-            failStatus(name, "memory AVIO buffer allocation failed");
-        io = avio_alloc_context(buffer, bufferSize, 0, this, &MemoryReader::read, nullptr, &MemoryReader::seek);
-        if (io == nullptr) {
-            av_free(buffer);
-            failStatus(name, "memory AVIO context allocation failed");
-        }
-    }
-};
-
 // Owns container metadata independently of decoder setup. Native execution
 // prepares the codec before attaching its Vulkan device and format callback.
 struct PreparedDecoder {
-    std::unique_ptr<MemoryReader> memory;
     FormatGuard format;
     CodecContextGuard codec;
     int streamIndex = -1;
     AVStream* stream = nullptr;             // Borrowed from format.
     const AVCodec* decoderCodec = nullptr;  // FFmpeg's static registry.
 
-    explicit PreparedDecoder(const std::string& path)
-        : PreparedDecoder(path, std::shared_ptr<const std::vector<std::uint8_t>>{}) {}
-
-    PreparedDecoder(const std::string& path, std::shared_ptr<const std::vector<std::uint8_t>> bytes,
-                    bool inspectPackets = true)
-        : memory(bytes ? std::make_unique<MemoryReader>(std::move(bytes)) : nullptr) {
-        int openStatus = 0;
-        if (memory) {
-            format.context = avformat_alloc_context();
-            if (format.context == nullptr)
-                failStatus(path, "avformat_alloc_context failed");
-            memory->open(path);
-            format.context->pb = memory->io;
-            format.context->flags |= AVFMT_FLAG_CUSTOM_IO;
-            openStatus = avformat_open_input(&format.context, nullptr, nullptr, nullptr);
-        } else {
-            openStatus = avformat_open_input(&format.context, path.c_str(), nullptr, nullptr);
-        }
+    explicit PreparedDecoder(const std::string& path, bool inspectPackets = true) {
+        const int openStatus = avformat_open_input(&format.context, path.c_str(), nullptr, nullptr);
         if (openStatus < 0)
             failStatus(path, "avformat_open_input failed", openStatus);
         if (inspectPackets && avformat_find_stream_info(format.context, nullptr) < 0)
@@ -754,7 +675,7 @@ struct PreparedDecoder {
 ClipInfo inspectClipHeader(const std::string& path) {
     // Stream probing may decode frames internally; descriptions use only the
     // container header and report unavailable geometry rather than doing that.
-    return PreparedDecoder(path, {}, false).metadata(path);
+    return PreparedDecoder(path, false).metadata(path);
 }
 
 void uploadNativeImage(gpu::SubmissionQueue& queue, gpu::Allocator& allocator, const gpu::Image& image,
@@ -824,7 +745,6 @@ void uploadNativeImage(gpu::SubmissionQueue& queue, gpu::Allocator& allocator, c
 }
 
 struct ClipDecoder::Impl {
-    std::unique_ptr<MemoryReader> memory;
     FormatGuard format;
     int streamIndex = -1;
     AVCodecContext* codecContext = nullptr;
@@ -849,7 +769,6 @@ struct ClipDecoder::Impl {
     ColorPolicy policy;
     ColorOverride overrides;
     bool opened = false;
-    bool viewerReplay = false;
     bool endOfStreamReached = false;
     int64_t decodedFrameCount = 0;
     int64_t framesDecodedHardware = 0;
@@ -879,22 +798,20 @@ std::unique_ptr<ClipDecoder> ClipDecoder::openInternal(gpu::Instance& instance, 
                                                        gpu::Allocator& allocator, const std::string& path,
                                                        const std::filesystem::path& convertSpirv,
                                                        const ColorPolicy& policy, const ColorOverride& overrides,
-                                                       const ClipColorInput& color, bool viewerReplay,
-                                                       std::shared_ptr<const std::vector<std::uint8_t>> memoryBytes) {
+                                                       const ClipColorInput& color) {
     auto decoder = std::unique_ptr<ClipDecoder>(new ClipDecoder());
     auto impl = std::make_unique<Impl>();
     decoder->impl_ = std::move(impl);
     Impl& d = *decoder->impl_;
 
-    PreparedDecoder prepared(path, std::move(memoryBytes));
+    PreparedDecoder prepared(path);
     prepared.prepareCodec(path);
     auto& codec = prepared.codec;
     AVStream* stream = prepared.stream;
 
     // Resolve the encoded-RGB interpretation and the decode necessities BEFORE
     // path selection: an interpretation outside the supported set is a hard
-    // error for both paths (no silent relabeling as scene-linear).
-    d.viewerReplay = viewerReplay;
+    // error (no silent relabeling as scene-linear).
     d.policy = policy;
     d.overrides = overrides;
     d.colorInput = color;
@@ -1069,7 +986,6 @@ std::unique_ptr<ClipDecoder> ClipDecoder::openInternal(gpu::Instance& instance, 
     d.codecContext = std::exchange(codec.context, nullptr);
     d.format.context = std::exchange(prepared.format.context, nullptr);
     d.streamIndex = prepared.streamIndex;
-    d.memory = std::move(prepared.memory);
     d.device = &device;
     d.allocator = &allocator;
 
@@ -1082,24 +998,7 @@ std::unique_ptr<ClipDecoder> ClipDecoder::open(gpu::Instance& instance, gpu::Dev
                                                const std::string& path, const std::filesystem::path& convertSpirv,
                                                const ColorPolicy& policy, const ColorOverride& overrides,
                                                const ClipColorInput& color) {
-    return openInternal(instance, device, allocator, path, convertSpirv, policy, overrides, color, false, {});
-}
-
-std::unique_ptr<ClipDecoder> ClipDecoder::openViewer(gpu::Instance& instance, gpu::Device& device,
-                                                     gpu::Allocator& allocator, const std::string& path,
-                                                     const std::filesystem::path& convertSpirv) {
-    return openInternal(instance, device, allocator, path, convertSpirv, ColorPolicy{}, ColorOverride{}, {}, true, {});
-}
-std::unique_ptr<ClipDecoder> ClipDecoder::openViewerMemory(gpu::Instance& instance, gpu::Device& device,
-                                                           gpu::Allocator& allocator, const std::string& name,
-                                                           std::shared_ptr<const std::vector<std::uint8_t>> bytes,
-                                                           const std::filesystem::path& convertSpirv) {
-    if (!bytes || bytes->empty())
-        failStatus(name, "viewer memory chunk is empty");
-    if (bytes->size() > static_cast<std::size_t>(std::numeric_limits<int64_t>::max()))
-        failStatus(name, "viewer memory chunk exceeds addressable AVIO size");
-    return openInternal(instance, device, allocator, name, convertSpirv, ColorPolicy{}, ColorOverride{}, {}, true,
-                        std::move(bytes));
+    return openInternal(instance, device, allocator, path, convertSpirv, policy, overrides, color);
 }
 
 const ResolvedInputColor& ClipDecoder::inputColor() const {
@@ -1193,7 +1092,7 @@ std::unique_ptr<gpu::Image> ClipDecoder::next(uint64_t timeout_ns) {
         // leaves R'G'B' for the retained GPU input pass below (or for the
         // consumer, for Raw), so the encoded domain is preserved until the one
         // authoritative conversion.
-        foreign.sourceLinearization = !impl.viewerReplay && !impl.rgb.ocio() && !impl.rgb.raw();
+        foreign.sourceLinearization = !impl.rgb.ocio() && !impl.rgb.raw();
         foreign.transfer = toGpuTransfer(impl.rgb.transfer);
         foreign.matrix = impl.color.matrix;
         foreign.range = impl.color.range;
@@ -1298,9 +1197,8 @@ std::unique_ptr<gpu::Image> ClipDecoder::next(uint64_t timeout_ns) {
     // convention for decoded frames whatever decoded them. Four channels are a
     // contiguous staging copy in the raster's own byte order; the upload is the
     // capability-dependent transfer cost this path carries.
-    const CpuImage pixels = convertDecodedFrame(frame.frame, impl.color, impl.info.path,
-                                                /*linearize=*/!impl.viewerReplay, 0, 0, nullptr, nullptr,
-                                                impl.viewerReplay ? nullptr : &impl.rgb);
+    const CpuImage pixels =
+        convertDecodedFrame(frame.frame, impl.color, impl.info.path, 0, 0, nullptr, nullptr, &impl.rgb);
     const auto channels = static_cast<std::uint32_t>(pixels.channelCount());
     auto output = std::make_unique<gpu::Image>(impl.allocator->create_image(
         static_cast<std::uint32_t>(frame.frame->width),
@@ -1315,26 +1213,19 @@ std::unique_ptr<gpu::Image> ClipDecoder::next(uint64_t timeout_ns) {
     return output;
 }
 
-std::unique_ptr<gpu::Image> ClipDecoder::nextViewer(uint64_t timeout_ns) {
-    if (!impl_->viewerReplay)
-        failStatus(impl_->info.path, "viewer next requested from a source decoder");
-    return next(timeout_ns);
-}
-
 namespace {
 
-// One software decode owner for both collection APIs and incremental
-// reference preparation. No second interpretation or packet-pump policy.
+// One software decode owner for both collection APIs. No second
+// interpretation or packet-pump policy.
 // `width`/`height` are exact output dimensions unless `fitBounds` is set, in
 // which case they are MAXIMUM preview bounds and the output is fitted to the
 // decoded frame's displayed shape (see fitPreview).
 class SoftwareReader {
 public:
-    SoftwareReader(const std::string& path, bool linearize, const ColorPolicy& policy, const ColorOverride& overrides,
+    SoftwareReader(const std::string& path, const ColorPolicy& policy, const ColorOverride& overrides,
                    const ClipColorInput& color, int width = 0, int height = 0, bool fitBounds = false)
         : prepared_(path), info_(prepared_.openCodec(path)), policy_(policy), overrides_(overrides), colorInput_(color),
-          linearize_(linearize), width_(width), height_(height), fitBounds_(fitBounds),
-          profile_(declaredProfile(prepared_.stream->codecpar)) {
+          width_(width), height_(height), fitBounds_(fitBounds), profile_(declaredProfile(prepared_.stream->codecpar)) {
         const ClipColorResolution resolved =
             resolveClipColor(prepared_.stream->codecpar, path, policy_, overrides_, colorInput_, "clip '" + path + "'");
         metadata_ = resolved.decode;
@@ -1364,12 +1255,6 @@ public:
                     frameColor(decoded_.frame, prepared_.stream->codecpar, path, policy_, overrides_, colorInput_,
                                "clip '" + path + "'");
                 const auto& color = resolved.decode;
-                if (!linearize_ &&
-                    (color.transfer != gpu::MediaTransfer::Bt709 || color.matrix != gpu::MediaMatrix::Bt709 ||
-                     color.range != gpu::MediaYuvRange::Limited || color.bitDepth != 8 ||
-                     decoded_.frame->format != AV_PIX_FMT_YUV420P))
-                    fail(path, pixelFormatName(static_cast<AVPixelFormat>(decoded_.frame->format)),
-                         "unsupported viewer representation; expected tagged limited-range BT.709 8-bit yuv420p");
                 if (seenFrame_ && color != metadata_)
                     failStatus(path, "changing color interpretation within a clip is unsupported");
                 if (seenFrame_ && resolved.rgb != rgb_)
@@ -1382,9 +1267,9 @@ public:
                 resolveOutputSize();
                 const int outWidth = outputResolved_ ? outputWidth_ : width_;
                 const int outHeight = outputResolved_ ? outputHeight_ : height_;
-                auto image = convertDecodedFrame(decoded_.frame, color, path, linearize_, outWidth, outHeight,
-                                                 &pixelFormat_, &planeCount_, linearize_ ? &rgb_ : nullptr);
-                if (linearize_ && colorInput_.cache != nullptr) {
+                auto image = convertDecodedFrame(decoded_.frame, color, path, outWidth, outHeight, &pixelFormat_,
+                                                 &planeCount_, &rgb_);
+                if (colorInput_.cache != nullptr) {
                     // Encoded-domain unassociation, then the resolved
                     // transfer/gamut conversion exactly once.
                     try {
@@ -1477,7 +1362,6 @@ private:
     ResolvedInputColor rgb_;
     PacketGuard packet_;
     FrameGuard decoded_;
-    bool linearize_;
     int width_;
     int height_;
     bool fitBounds_{false};
@@ -1491,10 +1375,9 @@ private:
     bool flushed_ = false;
 };
 
-[[nodiscard]] SoftwareClip decodeSoftware(const std::string& path, int64_t maxFrames, bool linearize,
-                                          const ColorPolicy& policy, const ColorOverride& overrides,
-                                          const ClipColorInput& color) {
-    SoftwareReader reader(path, linearize, policy, overrides, color);
+[[nodiscard]] SoftwareClip decodeSoftware(const std::string& path, int64_t maxFrames, const ColorPolicy& policy,
+                                          const ColorOverride& overrides, const ClipColorInput& color) {
+    SoftwareReader reader(path, policy, overrides, color);
     SoftwareClip result;
     result.info = reader.info();
     result.metadata = reader.metadata();
@@ -1516,12 +1399,12 @@ private:
 // Bounded single-frame read: discards frames before `frameIndex`, retains
 // only the requested frame, and never holds more than one decoded frame.
 // With `fitBounds`, `width`/`height` are maximum preview bounds.
-[[nodiscard]] SoftwareClip decodeSoftwareFrame(const std::string& path, int64_t frameIndex, bool linearize,
-                                               const ColorPolicy& policy, const ColorOverride& overrides, int width,
-                                               int height, bool fitBounds, const ClipColorInput& color) {
+[[nodiscard]] SoftwareClip decodeSoftwareFrame(const std::string& path, int64_t frameIndex, const ColorPolicy& policy,
+                                               const ColorOverride& overrides, int width, int height, bool fitBounds,
+                                               const ClipColorInput& color) {
     if (frameIndex < 0)
         failStatus(path, "frame index must be >= 0");
-    SoftwareReader reader(path, linearize, policy, overrides, color, width, height, fitBounds);
+    SoftwareReader reader(path, policy, overrides, color, width, height, fitBounds);
     SoftwareClip result;
     result.info = reader.info();
     result.metadata = reader.metadata();
@@ -1542,27 +1425,9 @@ private:
 }
 }  // namespace
 
-struct ViewerReferenceDecoder::Impl {
-    SoftwareReader reader;
-    Impl(const std::string& path, int width, int height) : reader(path, false, {}, {}, {}, width, height) {}
-};
-
-ViewerReferenceDecoder::ViewerReferenceDecoder(const std::string& path, int width, int height) {
-    if (!((width == 0 && height == 0) || (width > 0 && height > 0 && width <= 8192 && height <= 8192)))
-        failStatus(path, "reference dimensions must both be zero (native) or in 1..8192");
-    impl_ = std::make_unique<Impl>(path, width, height);
-}
-ViewerReferenceDecoder::~ViewerReferenceDecoder() = default;
-const ClipInfo& ViewerReferenceDecoder::info() const {
-    return impl_->reader.info();
-}
-std::optional<CpuImage> ViewerReferenceDecoder::next() {
-    return impl_->reader.next();
-}
-
 SoftwareClip decodeClipSoftware(const std::string& path, int64_t maxFrames, const ColorPolicy& policy,
                                 const ColorOverride& overrides, const ClipColorInput& color) {
-    return decodeSoftware(path, maxFrames, /*linearize=*/true, policy, overrides, color);
+    return decodeSoftware(path, maxFrames, policy, overrides, color);
 }
 
 SoftwareClip decodeClipFrameSoftware(const std::string& path, int64_t frameIndex, int width, int height,
@@ -1570,7 +1435,7 @@ SoftwareClip decodeClipFrameSoftware(const std::string& path, int64_t frameIndex
                                      const ClipColorInput& color) {
     if (!((width == 0 && height == 0) || (width > 0 && height > 0)))
         failStatus(path, "bounded frame dimensions must both be zero (native) or both positive");
-    return decodeSoftwareFrame(path, frameIndex, /*linearize=*/true, policy, overrides, width, height,
+    return decodeSoftwareFrame(path, frameIndex, policy, overrides, width, height,
                                /*fitBounds=*/true, color);
 }
 
@@ -1618,10 +1483,6 @@ ColorOverride colorOverrideFromInterpretation(const std::map<std::string, std::s
         }
     }
     return overrides;
-}
-
-SoftwareClip decodeViewerChunkSoftware(const std::string& path, int64_t maxFrames) {
-    return decodeSoftware(path, maxFrames, /*linearize=*/false, ColorPolicy{}, ColorOverride{}, {});
 }
 
 }  // namespace nemo::media

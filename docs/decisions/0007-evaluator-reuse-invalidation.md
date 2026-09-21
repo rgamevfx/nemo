@@ -103,9 +103,10 @@ document revision, result cache, or publication guard existed.
 
 ## Non-goals / deferred
 
-Automatic LRU/budget policy and disk eviction (#14) remain separate.
-Compressed viewer-cache representations (#12) and viewer presentation
-(#11) implement their respective representation and ownership contracts.
+General cache policy (#14) remains separate. The #106 BC7 cutover consumes the
+narrow #97 shared-allocator reservation/eligible-eviction capability; it does
+not close unrelated budget/settings/bake gates. Presentation (#11) retains its
+external-memory and completion-ownership contract.
 
 ## Application scheduling integration (#13)
 
@@ -130,15 +131,28 @@ The asynchronous cache writer checks scheduler eligibility before publishing;
 cancellation cannot be undone by later resubmitting the same revision.
 Neither scheduling nor publication freshness removes unrelated committed
 content-keyed representations.
-Pending publications coalesce by shared content identity, not destination:
-destination-local freshness must not place a duplicate identity twice in the
-same encoded chunk and retire that chunk while publishing its second entry.
+Pending publications coalesce by shared content identity, not destination.
 Coalesced work retains independent eligibility for each contributing
 destination; any still-current producer can publish the shared image.
 The destination registry and contributor set are bounded to 64 destinations.
-Late cancellation during metadata I/O prunes only obsolete identities and
-preserves original codec offsets; the index is rewritten without re-encoding
-or reevaluating surviving frames.
+With #106, each BC7 frame has independent pack metadata and payload integrity;
+replacement or cancellation never requires encoding or decoding its neighbors.
+
+Validated per-frame request/description/representation records provide the
+ordinary replay index. A known valid hit does not traverse the graph again;
+an edit or color refresh revalidates effective content rather than accepting a
+naked frame number or invalidating every sibling. Time-varying descriptions
+remain frame-local. Loading is distinct from missing: callers retain/coalesce
+asynchronous preparation instead of launching a second graph request.
+Equivalent targets can share compressed pixels, but every served frame binds
+the validated consumer's request and description, never the original producer's
+target. This holds both on first access and through the graph-free replay index.
+
+Ordered playback readiness is distinct from interactive latest-wins freshness:
+preparing a successor cannot stale its scheduled predecessor. Read-ahead
+requests only known cached entries, and misses in speculative preparation never
+run the graph. Direction/range/view changes cancel obsolete preparations while
+GPU submission ownership remains responsible for retiring their resources.
 
 The graph and timeline panels use the same ViewerController facade and
 explicitly composed ProjectSession. The session owns one Document and

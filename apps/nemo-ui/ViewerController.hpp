@@ -18,6 +18,7 @@
 #include <QVariantMap>
 #include <chrono>
 #include <cstddef>
+#include <deque>
 #include <limits>
 #include <map>
 #include <optional>
@@ -251,20 +252,31 @@ public:
     Q_INVOKABLE bool assignViewer(const QString& networkId, int viewerIndex, const QVariant& nodeId);
     Q_INVOKABLE void cancelRender();
     Q_INVOKABLE void requestRange(int first, int last);
-    // Panel transport. Playback produces one request per DISPLAYED frame: the
-    // next frame is submitted only after the outstanding one has been consumed,
-    // so a frame the composition is already computing is never superseded by
-    // its own successor and always reaches the viewer. A single-shot pacing
-    // timer only decides WHEN the next frame is due, so playback holds the
-    // composition rate while frames arrive early (cached replay) and runs as
-    // fast as the renderer allows when they do not; frames are always produced
-    // in order and none are skipped. Loops inclusively within
-    // [inFrame_, outFrame_].
+    // Panel transport. Playback presents frames from the ordered playback window
+    // (issue #106): the transport clock consumes READY frames while bounded
+    // replay preparation and read-ahead overlap presentation, instead of waiting
+    // for one outstanding live render per frame. A frame with no retained cache
+    // representation is the one frame that renders live, exactly as the serial
+    // path did, and a prefetched neighbour never renders. A single-shot pacing
+    // timer decides WHEN the next frame is due, so playback holds the
+    // composition rate while frames arrive early and falls behind honestly when
+    // they do not; frames are always produced in order and none are skipped.
+    // Loops inclusively within [inFrame_, outFrame_] in the stated direction.
     Q_INVOKABLE void play();
     Q_INVOKABLE void pause();
     Q_INVOKABLE void togglePlay();
     // Pauses and seeks to inFrame_.
     Q_INVOKABLE void stop();
+    // Ordered playback direction (issue #106). The packaged transport exposes
+    // forward playback only — the prototype's in/start/previous/play/stop/next/
+    // end/out bar with Space/Left/Right keys, which the production panel keeps —
+    // so reverse is stated through this plain public seam rather than an
+    // invented UI control, and the ordered playback window is exercised and
+    // driven through it by the native diagnostic harness. Changing direction
+    // retires the window, because its order changed.
+    enum class PlaybackDirection : std::uint8_t { Forward, Reverse };
+    void setPlaybackDirection(PlaybackDirection direction);
+    [[nodiscard]] PlaybackDirection playbackDirection() const { return playbackDirection_; }
     // Playback rate in frames per second, pacing the transport. This is the
     // COMPOSITION rate and is deliberately never taken from the probed media: a
     // 25 fps clip inside a 24 fps composition plays at the composition rate, and
@@ -469,6 +481,15 @@ private:
     [[nodiscard]] int frameDomainEnd() const;
     void buildGraph(const SourceReference& reference);
     void refreshRequest();
+    // The immutable view intent this panel states for `frame` (issues #98/#106):
+    // the target, the panel's current resolution/coverage/zoom/pan/viewport,
+    // layer and channel. Shared by the latest-wins render and the ordered
+    // playback window, so a replayed frame states exactly the view a live render
+    // would and the worker can serve its retained record without re-resolving
+    // it. `privateMediaSource` normalizes the request-owned media node out of
+    // the identity; the caller re-states the real target before submitting.
+    [[nodiscard]] eval::ViewIntent viewIntentFor(NetworkId network, NodeId target, int frame,
+                                                 bool privateMediaSource) const;
     // The described output of the frame this panel last presented (issue #98):
     // its actual format, pixel aspect and channels. A view is resolved on the
     // worker against the CURRENT frame, so this memo is presentation state —
@@ -553,15 +574,49 @@ private:
     // the current frame.
     void applyFrameCount(int frameCount);
     [[nodiscard]] int playbackInterval() const;
-    // The single place that decides whether playback may submit its next frame:
-    // waits for the frame in flight, holds the composition rate while frames are
-    // ready ahead of it, and resumes the pace rather than bursting after a frame
-    // that overran its budget.
+    // The single place that decides what the transport does next: present the
+    // frame the clock is due for if it is ready, otherwise keep the ordered
+    // playback window filled and look again shortly. A frame with no retained
+    // representation renders live through the latest-wins path, one outstanding.
     void pumpPlayback();
-    // Submits the next frame of the loop and advances the pacing due time.
-    // Returns false when nothing was submitted, so the caller does not walk the
-    // transport forward over frames that were never rendered.
-    [[nodiscard]] bool advancePlayback();
+    // The frame the transport walks to next in the stated direction, wrapping
+    // inclusively inside [inFrame_, outFrame_].
+    [[nodiscard]] int nextPlaybackFrame() const;
+    [[nodiscard]] int playbackFrameAfter(int frame) const;
+    // One frame of the ordered playback window (issue #106): the frame, the
+    // preparation admitted for it, and the frame itself once it is ready. The
+    // window is a contiguous run of frames starting at the frame the clock is
+    // due to show next, so presenting its head is always the transport's next
+    // step and a successor can never be shown out of order.
+    struct PlaybackSlot {
+        int frame{};
+        std::uint64_t request{};
+        std::uint64_t revision{};
+        std::optional<eval::ViewIntent> intent;
+        bool missing{};
+        std::shared_ptr<const ViewerResult> ready;
+    };
+    // What the ordered window can do for the frame the clock is due to show.
+    enum class PlaybackWindow { Prepared, LiveFrame, Unavailable };
+    // Slides the window onto the current head, drops a gap's successors, and
+    // admits the bounded read-ahead the transport still needs. Read-ahead is
+    // replay-only: a frame the retained index does not know is never rendered
+    // here, and filling stops at the first known gap.
+    [[nodiscard]] PlaybackWindow ensurePlaybackWindow();
+    // States one replay preparation for `slot` through the runtime's ordered
+    // playback admission. False when the panel has no renderable view or the
+    // bounded window refused it.
+    bool preparePlaybackFrame(PlaybackSlot& slot);
+    // Commits the head frame when the clock is due for it and it is ready.
+    bool presentReadyPlaybackFrame();
+    // Retires the whole ordered window: a latest-wins submission, a seek, an
+    // edit, a range, a destination change or a failure supersedes it.
+    void clearPlaybackWindow();
+    [[nodiscard]] PlaybackSlot* playbackSlot(std::uint64_t request);
+    // Publishes one completed frame as the panel's current presentation,
+    // advancing the transport to the frame it carries. Shared by the live and
+    // replay paths so both present identically.
+    void publishFrame(std::shared_ptr<const ViewerResult> frame);
     ViewerRuntime* runtime_;
     nemo::ProjectSession& session_;
     ParameterInteraction& interaction_;
@@ -616,12 +671,29 @@ private:
     QString sourceDescription_;
     bool pending_{false};
     // Request this panel has submitted and not yet consumed (0 = nothing
-    // outstanding). Playback never submits a frame while this is set, which is
-    // what makes an in-flight frame un-supersedable by its own successor.
+    // outstanding). This is the LATEST-WINS slot only — a seek, edit or view
+    // change. Ordered playback preparations travel through playbackWindow_
+    // instead, so they never make each other stale.
     std::uint64_t outstandingRequest_{0};
-    // Wall-clock time the next playback frame is due, advanced by one frame
-    // interval per submission: playback keeps the composition rate when frames
-    // arrive early and falls behind honestly when they do not.
+    // Ordered playback window (issue #106): the bounded run of frames the
+    // transport is walking to, each either prepared, ready or known to have no
+    // retained representation. Read-ahead is bounded by this constant, which
+    // stays inside the scheduler's own per-destination window.
+    static constexpr std::size_t kPlaybackWindowFrames = 4;
+    std::deque<PlaybackSlot> playbackWindow_;
+    std::optional<eval::ViewerPlaybackContext> playbackContext_;
+    NodeId playbackTarget_{kInvalidNode};
+    // True while the ONE frame with no retained representation is rendering
+    // live: the transport waits for it exactly as the serial path did, so a
+    // missing frame costs one live render and never a burst of speculative ones.
+    bool playbackLive_{false};
+    // The same missed head deadline may be observed by several worker/poll
+    // callbacks; report it once until a frame publishes or the window retires.
+    bool playbackUnderrunReported_{false};
+    PlaybackDirection playbackDirection_{PlaybackDirection::Forward};
+    // Monotonic deadline for the next frame. Epoch means the first publication
+    // establishes the phase; ordered publications advance it one interval,
+    // while an explicit seek/edit publication rebases it to that new frame.
     std::chrono::steady_clock::time_point playbackDue_{};
     bool outdated_{false};
     std::uint64_t generation_{};

@@ -111,26 +111,16 @@ int main(int argc, char* argv[]) {
     parser.addOption(projectOption);
     const QCommandLineOption cacheDirectoryOption("viewer-cache-dir", "Viewer cache storage directory.", "path",
                                                   QStandardPaths::writableLocation(QStandardPaths::CacheLocation));
-    const QCommandLineOption cacheCodecOption("viewer-cache-codec", "Provisional viewer replay encoder.", "codec",
-                                              "h264-nvenc");
-    const QCommandLineOption cacheChunksOption("viewer-cache-chunk-frames", "Maximum requested frames per chunk.",
-                                               "count", "12");
-    const QCommandLineOption cacheBitrateOption("viewer-cache-bitrate-kbps", "Provisional replay bitrate.", "kbps",
-                                                "8000");
     const QCommandLineOption benchmarkOption("cache-benchmark-frames",
                                              "Explicitly visit N frames and report request-to-Qt-frameSwapped latency.",
                                              "count", "0");
-    parser.addOptions({cacheDirectoryOption, cacheCodecOption, cacheChunksOption, cacheBitrateOption, benchmarkOption});
+    parser.addOptions({cacheDirectoryOption, benchmarkOption});
     parser.addOption(frameOption);
     parser.process(app);
-    bool chunkOk = false, bitrateOk = false, benchmarkOk = false;
-    const int chunkFrames = parser.value(cacheChunksOption).toInt(&chunkOk);
-    const int bitrate = parser.value(cacheBitrateOption).toInt(&bitrateOk);
+    bool benchmarkOk = false;
     const int benchmarkFrames = parser.value(benchmarkOption).toInt(&benchmarkOk);
-    if (!chunkOk || chunkFrames < 1 || chunkFrames > 48 || !bitrateOk || bitrate < 1 || !benchmarkOk ||
-        benchmarkFrames < 0 || (benchmarkFrames > 0 && parser.value(sourceOption).isEmpty())) {
-        std::cerr
-            << "nemo-ui: invalid cache options; chunk frames 1..48, positive bitrate, benchmark requires source\n";
+    if (!benchmarkOk || benchmarkFrames < 0 || (benchmarkFrames > 0 && parser.value(sourceOption).isEmpty())) {
+        std::cerr << "nemo-ui: invalid benchmark options; nonnegative frame count and source required\n";
         return 2;
     }
     nemo::workspace::WorkspaceController workspace(QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation) +
@@ -140,10 +130,6 @@ int main(int argc, char* argv[]) {
                                  ? parser.value(cacheDirectoryOption).toStdString()
                                  : workspace.cacheDirectory().toStdString();
     cacheOptions.maxDiskBytes = static_cast<std::uint64_t>(workspace.cacheDiskMiB()) * 1024ULL * 1024ULL;
-    cacheOptions.encoding.codec = parser.value(cacheCodecOption).toStdString();
-    cacheOptions.encoding.bitrateKbps = bitrate;
-    cacheOptions.chunkFrames = static_cast<std::size_t>(chunkFrames);
-    cacheOptions.maxPendingFrames = static_cast<std::size_t>(chunkFrames);
 
     // Qt renders on the app-owned presentation device, separate from execution.
     QQuickWindow::setGraphicsApi(QSGRendererInterface::Vulkan);

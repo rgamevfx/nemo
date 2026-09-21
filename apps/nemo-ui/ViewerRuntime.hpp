@@ -16,6 +16,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
+#include <deque>
 #include <filesystem>
 #include <map>
 #include <memory>
@@ -42,6 +43,12 @@ struct ViewerResult {
     std::uint64_t requestId{};
     std::uint64_t revision{};
     bool cacheHit{};
+    // True when the frame was served from the retained display-cache
+    // representation (issue #106) rather than evaluated: the presentation was
+    // sampled directly from the compressed frame. The panel presents it
+    // exactly like a live frame; the flag exists so a replay preparation can be
+    // told from a live one when it is consumed.
+    bool replay{};
     std::chrono::steady_clock::time_point requestedAt{};
     // Destination that produced this result. Only that destination's panel
     // may publish or report it.
@@ -86,8 +93,17 @@ struct ViewerUnavailableView {
     std::uint64_t revision{};
     ImageDescription description;
 };
+// A replay preparation found no retained display-cache representation for the
+// frame it names (issue #106): never visited, missing, failed or evicted. The
+// transport may render THAT ONE frame live — the frame it is due to show —
+// while a prefetched neighbour is simply dropped. This is an answer, not an
+// error, and it is never a reason to publish a substitute image.
+struct ViewerReplayMiss {
+    std::int64_t localTime{};
+    std::uint64_t requestId{};
+};
 using ViewerWorkResult = std::variant<std::shared_ptr<const ViewerResult>, SourceProbeResult, ViewerTargetDescription,
-                                      ViewerWorkingSample, ViewerUnavailableView, ViewerFailure>;
+                                      ViewerWorkingSample, ViewerUnavailableView, ViewerFailure, ViewerReplayMiss>;
 
 struct ViewerRuntimeCounts {
     std::uint64_t queued{};
@@ -101,7 +117,10 @@ struct ViewerRuntimeCounts {
     std::string cacheError;
     std::uint64_t cacheDiskBytes{};
     std::uint64_t cacheCompressedRamBytes{};
-    std::uint64_t cacheDecodedHotFrames{};
+    // Retained compressed frames resident on the device (issue #106) and the
+    // bytes they are charged for; the RAM hot set is the field above.
+    std::uint64_t cacheResidentFrames{};
+    std::uint64_t cacheResidentBytes{};
     std::uint64_t cacheActiveFrames{};
     [[nodiscard]] bool operator==(const ViewerRuntimeCounts&) const = default;
 };
@@ -192,12 +211,34 @@ public:
     bool requestRange(Document document, EvaluationRequest request, int first, int last, std::uint64_t id,
                       eval::ViewerDestination destination = eval::ViewerDestination::Cache,
                       std::string colorConfigPath = {});
+    // One frame of the transport's ordered playback window (issue #106). The
+    // worker serves it from the retained display-cache representation only and
+    // never evaluates the graph: a frame with no retained representation
+    // publishes ViewerReplayMiss, and one whose representation is still loading
+    // is kept pending and retried without blocking foreground work. Results
+    // arrive in an ordered per-destination queue, so a prepared frame is never
+    // displaced by its own successor, and a latest-wins submission or
+    // cancellation for that destination retires the whole window.
+    //
+    // Returns the admitted unit's document revision — the immutable snapshot's
+    // identity, computed once at admission — which the worker hands to the
+    // replay probe so an ordinary playback tick validates its retained record
+    // without fingerprinting the whole document again. nullopt when refused.
+    [[nodiscard]] std::optional<std::uint64_t>
+    prepareReplay(const eval::ViewerPlaybackContext& context, eval::ViewIntent intent, std::uint64_t id,
+                  eval::ViewerDestination destination = eval::ViewerDestination::Interactive,
+                  std::string colorConfigPath = {});
     // Nonblocking cancellation. `id` is a generation watermark: queued work
     // is dropped immediately and in-flight work is rejected at publication.
     // The global form moves the shared watermark; the destination form only
     // invalidates that destination.
     void cancel(std::uint64_t id);
     void cancel(std::uint64_t id, eval::ViewerDestination destination);
+    // Retires only a destination's ordered playback window (issue #106): queued
+    // and in-flight replay preparations are dropped and rejected while the
+    // destination's latest-wins request, mailbox result and current frame are
+    // untouched. Nonblocking; no GPU work is waited for.
+    void cancelPlayback(eval::ViewerDestination destination);
     [[nodiscard]] ViewerRuntimeCounts counts() const;
     // Scheduler counters for one destination beside the shared cache counts.
     [[nodiscard]] ViewerRuntimeCounts counts(eval::ViewerDestination destination) const;
@@ -234,8 +275,36 @@ private:
     using Pending = eval::ViewerScheduledRequest;
 
     void run(const std::filesystem::path& shaders, const std::vector<eval::GpuNodeContribution>& contributions);
+    // Executes one scheduled unit on the worker session.
+    void execute(Pending& pending, eval::ViewerSession& session, const std::filesystem::path& shaders,
+                 std::vector<std::uint32_t>& presentationShader, std::vector<std::uint32_t>& replayShader);
+    // Serves one ordered playback frame from the retained representation and
+    // publishes it (or the miss answer) on the destination's ordered replay
+    // queue.
+    void executeReplay(const Pending& pending, eval::ViewerSession& session, const std::filesystem::path& shaders,
+                       std::vector<std::uint32_t>& presentationShader, std::vector<std::uint32_t>& replayShader);
+    // The presentation copy of one frame: the live float path, or the direct
+    // BC7-sample path when the frame was served from the retained cache
+    // representation. The module each path needs is loaded on first use.
+    [[nodiscard]] gpu::ViewerPresentation presentFrame(const eval::ViewerFrame& frame,
+                                                       const std::filesystem::path& shaders,
+                                                       std::vector<std::uint32_t>& presentationShader,
+                                                       std::vector<std::uint32_t>& replayShader);
     bool publish(ViewerWorkResult result, const Pending& pending);
+    // Ordered ready replay results, appended in the worker's own order and
+    // consumed by the panel's transport clock. A latest-wins result never waits
+    // behind them.
+    bool publishReplay(ViewerWorkResult result, const Pending& pending);
     void finishRange(const Pending& pending, bool cacheAccepted);
+    // Bounded worker-owned list of replay preparations whose retained
+    // representation is still loading, ordered by retry deadline. A worker may
+    // wait for its own I/O; it never waits for the GUI thread.
+    struct PendingReplay {
+        Pending request;
+        std::chrono::steady_clock::time_point retryAt{};
+        std::chrono::milliseconds backoff{};
+    };
+    void keepPendingReplay(Pending pending, std::chrono::milliseconds backoff);
     // mutex_ is held by callers; refreshes the shared cache snapshot and
     // spreads it over the given scheduler counters.
     [[nodiscard]] ViewerRuntimeCounts composeCountsLocked(const eval::ViewerSchedulerCounts& counts) const;
@@ -269,6 +338,14 @@ private:
         ViewerWorkResult result;
     };
     std::map<eval::ViewerDestination, Published> results_;
+    // Ordered ready playback results per destination (issue #106). A latest-wins
+    // result is consumed first; the replay queue is drained in the worker's own
+    // order so a prepared frame is never lost behind its successor.
+    std::map<eval::ViewerDestination, std::deque<Published>> replayResults_;
+    // Worker-only: replay preparations whose retained representation is still
+    // loading, kept in retry-deadline order. Bounded by the scheduler's own
+    // playback window because every entry is one in-flight Replay unit.
+    std::deque<PendingReplay> replayPending_;
     // Panel-instance allocation table, keyed by panel identity so a panel
     // keeps one destination for as long as it lives.
     std::map<QString, eval::ViewerDestination> panelDestinations_;

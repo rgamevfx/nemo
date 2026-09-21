@@ -4,16 +4,18 @@
 #include <charconv>
 #include <chrono>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <iostream>
 #include <limits>
 #include <numeric>
 #include <optional>
 #include <random>
-#include <sstream>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -23,11 +25,14 @@
 #include "nemo/core/session/ProjectSession.hpp"
 
 #ifdef NEMO_BUILD_GPU
-#include "nemo/core/evaluation/CpuReference.hpp"
+#include <vulkan/vulkan.h>
+
 #include "nemo/core/session/ProjectFile.hpp"
 #include "nemo/eval/Viewer.hpp"
 #include "nemo/eval/ViewerCache.hpp"
 #include "nemo/gpu/Allocator.hpp"
+#include "nemo/gpu/Bc7.hpp"
+#include "nemo/gpu/Compile.hpp"
 #include "nemo/gpu/ComputePass.hpp"
 #include "nemo/gpu/Device.hpp"
 #include "nemo/gpu/Instance.hpp"
@@ -52,16 +57,12 @@ struct CacheCommandOptions {
     std::string outputName;
     std::string replayOrder = "forward";
     std::string shaderDirectory;
-    std::string codec = "h264-nvenc";
     int width = 1920;
     int height = 1080;
     int scale = 1;
-    int chunkFrames = 12;
-    int bitrateKbps = 8000;
     nemo::NetworkId network{nemo::kInvalidNetwork};
     bool staleSupersede = false;
     bool fidelity = false;
-    std::string viewAfter;
     ParameterEdit edit;
 };
 
@@ -142,18 +143,6 @@ void parseOption(CacheCommandOptions& options, const std::string& flag, const st
         if (value.empty())
             throw std::invalid_argument(flag + ": empty path");
         options.shaderDirectory = value;
-    } else if (flag == "--codec") {
-        if (value.empty() || value.find_first_of(" \t\r\n") != std::string::npos)
-            throw std::invalid_argument(flag + ": expected a nonempty codec id without whitespace");
-        options.codec = value;
-    } else if (flag == "--chunk-frames") {
-        options.chunkFrames = parsePositiveInt(value, flag, 4096);
-    } else if (flag == "--bitrate-kbps") {
-        options.bitrateKbps = parsePositiveInt(value, flag, std::numeric_limits<int>::max());
-    } else if (flag == "--view-after") {
-        if (value.empty())
-            throw std::invalid_argument(flag + ": empty viewing transform");
-        options.viewAfter = value;
     } else if (flag == "--edit-node") {
         options.edit.node = value;
     } else if (flag == "--edit-key") {
@@ -222,33 +211,9 @@ void parseOption(CacheCommandOptions& options, const std::string& flag, const st
 
 #ifdef NEMO_BUILD_GPU
 
-[[nodiscard]] Json encodeStatsJson(const nemo::media::EncodeStats& stats) {
-    return Json{{"codec", stats.codec},
-                {"profile", stats.profile},
-                {"initialization_ms", stats.initializationMs},
-                {"allocation_packing_ms", stats.allocationPackingMs},
-                {"conversion_ms", stats.conversionMs},
-                {"gpu_conversion_ms", stats.gpuConversionMs},
-                {"host_to_device_ms", stats.hostToDeviceMs},
-                {"host_to_device_bytes", stats.hostToDeviceBytes},
-                {"device_to_host_ms", stats.deviceToHostMs},
-                {"device_to_host_bytes", stats.deviceToHostBytes},
-                {"device_to_device_ms", stats.deviceToDeviceMs},
-                {"device_to_device_bytes", stats.deviceToDeviceBytes},
-                {"staging_bytes", stats.stagingBytes},
-                {"submission_drain_ms", stats.submissionDrainMs},
-                {"mux_finalization_ms", stats.muxFinalizationMs},
-                {"complete_chunk_ms", stats.completeChunkMs},
-                {"cold_setup_ms", stats.coldSetupMs},
-                {"warm_setup_ms", stats.warmSetupMs},
-                {"session_chunk_count", stats.sessionChunkCount},
-                {"session_reuse_count", stats.sessionReuseCount},
-                {"encoded_bytes", stats.encodedBytes},
-                {"encoded_frames", stats.encodedFrames},
-                {"fallback_reason", stats.fallbackReason},
-                {"session_reused", stats.sessionReused}};
-}
-
+// The single BC7 cache representation (issue #106): independent compressed
+// frames, no video chunk/codec/decode state. Counts that describe a codec or a
+// chunk no longer exist, and the CLI reports exactly the cache's own names.
 [[nodiscard]] Json cacheCountsJson(const nemo::eval::ViewerCacheCounts& counts) {
     return Json{{"hits", counts.hits},
                 {"misses", counts.misses},
@@ -257,25 +222,22 @@ void parseOption(CacheCommandOptions& options, const std::string& flag, const st
                 {"encoded_frames", counts.encodedFrames},
                 {"pending_frames", counts.pendingFrames},
                 {"peak_pending_frames", counts.peakPendingFrames},
+                {"pending_bytes", counts.pendingBytes},
                 {"disk_bytes", counts.diskBytes},
                 {"admission_rejected", counts.admissionRejected},
                 {"admission_dropped", counts.admissionDropped},
+                {"invalid_entries", counts.invalidEntries},
                 {"active_frames", counts.activeFrames},
                 {"encoding_frames", counts.encodingFrames},
                 {"compressed_hot_hits", counts.compressedHotHits},
-                {"decoded_hot_hits", counts.decodedHotHits},
                 {"compressed_hot_bytes", counts.compressedHotBytes},
-                {"compressed_hot_chunks", counts.compressedHotChunks},
-                {"decoded_hot_frames", counts.decodedHotFrames},
-                {"invalid_entries", counts.invalidEntries},
+                {"resident_bytes", counts.residentBytes},
+                {"resident_frames", counts.residentFrames},
+                {"uploaded_frames", counts.uploadedFrames},
+                {"loading_frames", counts.loadingFrames},
+                {"evicted_frames", counts.evictedFrames},
                 {"errors", counts.errors},
-                {"last_error", counts.lastError},
-                {"decoded_frames", counts.decodedFrames},
-                {"decoded_queue_peak", counts.decodedQueuePeak},
-                {"hardware_decoded_frames", counts.hardwareDecodedFrames},
-                {"software_decoded_frames", counts.softwareDecodedFrames},
-                {"replay_fallback_reason", counts.replayFallbackReason},
-                {"encode", encodeStatsJson(counts.encode)}};
+                {"last_error", counts.lastError}};
 }
 
 [[nodiscard]] nemo::NetworkId selectedNetwork(const nemo::Document& document, const CacheCommandOptions& options) {
@@ -315,6 +277,28 @@ void parseOption(CacheCommandOptions& options, const std::string& flag, const st
     return result;
 }
 
+// A retained frame whose compressed blocks are still loading is NOT a miss: the
+// harness retries the same request until the preparation is ready, and never
+// falls back to a graph render for it. This is the synchronous consumer the
+// ViewerReplayPending contract exists for, used by both the build phase (a
+// fresh-process reopen can find a Loading entry) and the replay phase.
+template <typename Request>
+[[nodiscard]] nemo::eval::ViewerFrame retryPending(Request&& request, std::uint64_t& retries) {
+    const auto deadline = Clock::now() + std::chrono::seconds(30);
+    for (;;) {
+        try {
+            return request();
+        } catch (const nemo::eval::ViewerReplayPending& pending) {
+            if (Clock::now() >= deadline) {
+                throw std::runtime_error("cache-viewer: retained representation '" + pending.identity +
+                                         "' did not become ready: " + pending.what());
+            }
+            ++retries;
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        }
+    }
+}
+
 // Explicit diagnostic edits affect only an in-memory project session and the
 // last explicitly requested frame. Never rewrites the input project.
 [[nodiscard]] Json probeInvalidation(nemo::eval::ViewerSession& session, const nemo::Document& original,
@@ -340,7 +324,10 @@ void parseOption(CacheCommandOptions& options, const std::string& flag, const st
         session.flushCache();
         const auto afterReplacement = session.cacheCounts();
         const auto reuseAfter = session.reuseCounts();
-        const auto replay = session.render(document, request, 10'000'000'000ULL, generation++);
+        std::uint64_t retries = 0;
+        const auto replayGeneration = generation++;
+        const auto replay = retryPending(
+            [&] { return session.render(document, request, 10'000'000'000ULL, replayGeneration); }, retries);
         const auto published = afterReplacement.published - before.published;
         const auto evaluations = reuseAfter.misses - reuseBefore.misses;
         const auto reused = reuseAfter.hits - reuseBefore.hits;
@@ -350,6 +337,8 @@ void parseOption(CacheCommandOptions& options, const std::string& flag, const st
                           {"frame", frameNumber},
                           {"replacement_cache_hit", replacement.cacheHit},
                           {"replacement_replay_hit", replay.cacheHit},
+                          {"replay_is_bc7", replay.replay != nullptr},
+                          {"replay_retries", retries},
                           {"published_frames", published},
                           {"graph_evaluation_misses", evaluations},
                           {"upstream_reuse_hits", reused},
@@ -373,17 +362,86 @@ void parseOption(CacheCommandOptions& options, const std::string& flag, const st
     return probes;
 }
 
-[[nodiscard]] nemo::CpuImage diagnosticReadback(const nemo::eval::ViewerFrame& frame, nemo::gpu::Device& device,
-                                                nemo::gpu::Allocator& allocator) {
-    if (!frame.image)
-        throw std::runtime_error("diagnostic readback: viewer frame has no image");
-    if (frame.layout.width <= 0 || frame.layout.height <= 0)
-        throw std::runtime_error("diagnostic readback: viewer frame has invalid dimensions");
-    nemo::CpuImage image(frame.layout);
-    const std::size_t bytes = static_cast<std::size_t>(frame.layout.width) *
-                              static_cast<std::size_t>(frame.layout.height) * nemo::kImageChannels * sizeof(float);
+// Diagnostic-only sample of one completed display-referred frame through the
+// production presentation module on the SAME device, into a host-readable
+// RGBA32F image. The module quantizes to 8-bit display levels and writes them
+// as floats, so both the live reference and the BC7 replay are measured after
+// the identical transform: the difference between them is BC7 loss alone.
+//
+// `blockCompressed` selects the BC7 module, whose binding 0 is a combined image
+// sampler over the compressed texture (NEAREST at texel centres); the live
+// module reads the float image as a storage image. Neither pass host-waits the
+// producer queue: this helper waits only its own diagnostic submission.
+[[nodiscard]] nemo::gpu::Image samplePresentation(nemo::gpu::Device& device, nemo::gpu::Allocator& allocator,
+                                                  const nemo::gpu::Image& source, bool blockCompressed,
+                                                  const std::vector<std::uint32_t>& spirv, std::uint64_t timeout_ns) {
+    const VkExtent3D extent = source.extent();
+    if (extent.width == 0 || extent.height == 0)
+        throw std::runtime_error("diagnostic sample: source image has invalid dimensions");
+    auto output = allocator.create_image(extent.width, extent.height, 1, VK_FORMAT_R32G32B32A32_SFLOAT,
+                                         VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, 2);
+    // std140 uniform block, vec4-aligned; 0 is ViewerChannel::RGBA (the
+    // composite, no display isolation).
+    constexpr VkDeviceSize kChannelBytes = 16;
+    auto channelBuffer = allocator.create_buffer(kChannelBytes, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                                 nemo::gpu::MemoryPreference::HostMapped);
+    std::memset(channelBuffer.mapped(), 0, static_cast<std::size_t>(kChannelBytes));
+    auto pass = nemo::gpu::ComputePass::create(
+        device, spirv,
+        {{0, 0,
+          blockCompressed ? nemo::gpu::DescriptorKind::CombinedImageSampler : nemo::gpu::DescriptorKind::StorageImage,
+          nullptr, &source, blockCompressed},
+         {0, 1, nemo::gpu::DescriptorKind::StorageImage, nullptr, &output},
+         {0, 2, nemo::gpu::DescriptorKind::UniformBuffer, &channelBuffer}});
     auto& queue = device.submissions(device.graphics_family());
-    nemo::gpu::downloadImage(queue, allocator, *frame.image, image.data(), bytes, 10'000'000'000ULL);
+    const VkImageLayout sourceLayout =
+        blockCompressed ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_GENERAL;
+    const VkAccessFlags sourceAccess =
+        blockCompressed ? VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT : VK_ACCESS_MEMORY_WRITE_BIT;
+    const auto completion = queue.submit(
+        [&](VkCommandBuffer command) {
+            // The compressed texture is read where encode/upload left it; the
+            // float display image keeps its own GENERAL convention.
+            nemo::gpu::recordImageBarrier(command, source, sourceLayout, sourceLayout,
+                                          VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, sourceAccess,
+                                          VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
+            nemo::gpu::recordImageBarrier(command, output, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL,
+                                          VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                                          VK_ACCESS_SHADER_WRITE_BIT);
+            pass->record(command, (extent.width + 7) / 8, (extent.height + 7) / 8, 1);
+        },
+        {pass->retain()}, {}, timeout_ns);
+    if (!completion)
+        throw std::runtime_error("diagnostic sample: submission capacity unavailable");
+    if (!queue.wait(*completion, timeout_ns))
+        throw std::runtime_error("diagnostic sample: presentation pass did not complete");
+    return output;
+}
+
+[[nodiscard]] nemo::CpuImage diagnosticReadback(const nemo::eval::ViewerFrame& frame, nemo::gpu::Device& device,
+                                                nemo::gpu::Allocator& allocator,
+                                                const std::vector<std::uint32_t>& presentationSpirv,
+                                                const std::vector<std::uint32_t>& bc7Spirv, std::uint64_t timeout_ns) {
+    const nemo::gpu::Image* source = nullptr;
+    bool blockCompressed = false;
+    if (frame.replay) {
+        source = &frame.replay->image;
+        blockCompressed = true;
+    } else if (frame.image) {
+        source = frame.image.get();
+    } else {
+        throw std::runtime_error("diagnostic readback: viewer frame carries neither a live nor a replay image");
+    }
+    const nemo::gpu::Image sampled = samplePresentation(device, allocator, *source, blockCompressed,
+                                                        blockCompressed ? bc7Spirv : presentationSpirv, timeout_ns);
+    nemo::CpuImage image(nemo::ImageLayout{.width = static_cast<int>(sampled.extent().width),
+                                           .height = static_cast<int>(sampled.extent().height),
+                                           .channels = {"R", "G", "B", "A"},
+                                           .color = nemo::ColorInterpretation::DisplayReferred});
+    const std::size_t bytes = static_cast<std::size_t>(image.width()) * static_cast<std::size_t>(image.height()) *
+                              nemo::kImageChannels * sizeof(float);
+    nemo::gpu::downloadImage(device.submissions(device.graphics_family()), allocator, sampled, image.data(), bytes,
+                             timeout_ns);
     return image;
 }
 
@@ -400,7 +458,7 @@ void parseOption(CacheCommandOptions& options, const std::string& flag, const st
             for (std::size_t channel = 0; channel < 3; ++channel) {
                 const float error = actual[channel] - expected[channel];
                 if (!std::isfinite(error))
-                    throw std::runtime_error("fidelity: non-finite decoded sample");
+                    throw std::runtime_error("fidelity: non-finite sampled value");
                 squaredError += static_cast<double>(error) * static_cast<double>(error);
                 maxAbsoluteError = std::max(maxAbsoluteError, std::abs(error));
                 ++samples;
@@ -411,7 +469,7 @@ void parseOption(CacheCommandOptions& options, const std::string& flag, const st
     const bool exact = rmse == 0.0;
     const double psnr = exact ? 0.0 : 20.0 * std::log10(1.0 / rmse);
     const Json psnrValue = exact ? Json(std::string{"inf"}) : Json(psnr);
-    constexpr double kRmseTolerance = 0.08;
+    constexpr double kRmseTolerance = 0.02;
     return Json{
         {"performed", true},
         {"width", source.width()},
@@ -422,10 +480,13 @@ void parseOption(CacheCommandOptions& options, const std::string& flag, const st
         {"psnr_db", psnrValue},
         {"rmse_tolerance", kRmseTolerance},
         {"within_declared_tolerance", rmse <= kRmseTolerance},
-        {"tolerance_scope", "provisional aggregate RMS diagnostic, not artist quality approval; local chroma-edge loss "
-                            "is reported separately"},
+        {"representation", "bc7-unorm-4x4"},
+        {"tolerance_scope", "BC7-loss tolerance on the sampled display levels; the live reference and the cached "
+                            "replay go through the same production presentation module, so the measured difference "
+                            "is the compressed representation's loss alone"},
         {"readback_scope",
-         "two diagnostic full-frame GPU-to-host readbacks (source viewer and one cached replay); never the hot path"}};
+         "two diagnostic GPU-to-host readbacks (one live reference sample and one sampled BC7 replay frame); never "
+         "the hot path"}};
 }
 
 int runGpuHarness(const CacheCommandOptions& options, Json& report,
@@ -451,19 +512,22 @@ int runGpuHarness(const CacheCommandOptions& options, Json& report,
                                  "': " + directoryError.message());
 
     auto instance = nemo::gpu::Instance::create({.validation = true});
-    // Device-resident NVENC interop requires the same external-memory device
-    // capability used by the native UI runtime; do not silently use a
-    // non-exportable device in this harness.
-    auto device = nemo::gpu::Device::create(*instance, {.externalSharing = true});
+    // The headless harness performs no cross-device presentation handoff, so it
+    // asks for no external-memory device capability: the BC7 path is a
+    // same-device encode/upload/sample path.
+    auto device = nemo::gpu::Device::create(*instance);
     auto allocator = nemo::gpu::Allocator::create(*instance, *device, {.max_device_bytes = 2ULL << 30});
     const auto& properties = device->properties();
-    report["device"] = {{"name", properties.deviceName},
-                        {"vendor_id", properties.vendorID},
-                        {"device_id", properties.deviceID},
-                        {"driver_version", properties.driverVersion},
-                        {"api_version", properties.apiVersion},
-                        {"external_sharing_requested", true},
-                        {"encode_queue_available", device->encode_family().has_value()}};
+    VkFormatProperties bc7Properties{};
+    vkGetPhysicalDeviceFormatProperties(device->physical(), VK_FORMAT_BC7_UNORM_BLOCK, &bc7Properties);
+    report["device"] = {
+        {"name", properties.deviceName},
+        {"vendor_id", properties.vendorID},
+        {"device_id", properties.deviceID},
+        {"driver_version", properties.driverVersion},
+        {"api_version", properties.apiVersion},
+        {"decode_queue_available", device->decode_family().has_value()},
+        {"bc7_sampled_supported", (bc7Properties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT) != 0}};
 
     std::filesystem::path shaders = options.shaderDirectory;
 #ifdef NEMO_SLANG_SPV_DIR
@@ -473,16 +537,11 @@ int runGpuHarness(const CacheCommandOptions& options, Json& report,
     if (shaders.empty())
         throw std::runtime_error("no Slang shader directory: pass --shaders <spv-dir> or configure NEMO_SLANG_SPV_DIR");
 
+    // Shared cache contract (issue #106): byte bounds are primary, the directory
+    // is the only per-invocation choice, and no codec/GOP/bitrate/chunk knob
+    // exists any more.
     nemo::eval::ViewerCacheOptions cacheOptions;
     cacheOptions.directory = options.cacheDirectory;
-    cacheOptions.encoding.codec = options.codec;
-    cacheOptions.encoding.gopSize = options.chunkFrames;
-    cacheOptions.encoding.bitrateKbps = options.bitrateKbps;
-    cacheOptions.chunkFrames = static_cast<std::size_t>(options.chunkFrames);
-    // Keep the live asynchronous queue bounded independently of codec GOP
-    // size; a large chunk request must not retain an unbounded float history.
-    cacheOptions.maxPendingFrames = 12;
-    cacheOptions.maxDecodedFrames = 2;
     const auto uniqueRequested = uniqueSortedFrames(options.requestedFrames);
     report["request"] = {{"network", selectedNetwork(loaded.document, options)},
                          {"frames", options.requestedFrames},
@@ -495,9 +554,7 @@ int runGpuHarness(const CacheCommandOptions& options, Json& report,
                          {"scale", options.scale},
                          {"representation_width", nemo::scaledDimension(options.width, options.scale)},
                          {"representation_height", nemo::scaledDimension(options.height, options.scale)},
-                         {"codec", options.codec},
-                         {"chunk_frames", options.chunkFrames},
-                         {"bitrate_kbps", options.bitrateKbps},
+                         {"representation", "bc7-unorm-4x4"},
                          {"fidelity_diagnostic", options.fidelity},
                          {"cache_directory", std::filesystem::absolute(options.cacheDirectory).string()},
                          {"preexisting_cache_directory", hadExistingCache}};
@@ -506,30 +563,36 @@ int runGpuHarness(const CacheCommandOptions& options, Json& report,
     std::vector<double> buildLatencies;
     std::optional<nemo::CpuImage> fidelitySource;
     std::optional<nemo::CpuImage> fidelityReplay;
+    std::vector<std::uint32_t> presentationSpirv;
+    std::vector<std::uint32_t> bc7Spirv;
     const std::int64_t fidelityFrame = uniqueRequested.front();
     std::uint64_t diagnosticReadbacks = 0;
     if (options.fidelity) {
+        presentationSpirv = nemo::gpu::loadSpirv(shaders / "viewerPresentation.spv");
+        bc7Spirv = nemo::gpu::loadSpirv(shaders / "viewerPresentationBc7.spv");
         // Establish the source-view oracle in a standalone session with no
-        // cache configured. This prevents a pre-existing disk entry from
+        // cache configured. This prevents a pre-existing retained entry from
         // becoming a self-comparison when --fidelity is requested.
         nemo::eval::ViewerSession sourceSession(*instance, *device, *allocator, shaders, ocioConfigPath,
                                                 gpuContributions);
         const nemo::EvaluationRequest sourceRequest = makeRequest(loaded.document, options, fidelityFrame);
         nemo::eval::ViewerFrame sourceFrame =
             sourceSession.render(loaded.document, sourceRequest, 10'000'000'000ULL, 0);
-        fidelitySource = diagnosticReadback(sourceFrame, *device, *allocator);
+        fidelitySource =
+            diagnosticReadback(sourceFrame, *device, *allocator, presentationSpirv, bc7Spirv, 10'000'000'000ULL);
         ++diagnosticReadbacks;
     }
     const auto buildStart = Clock::now();
     nemo::eval::ViewerCacheCounts buildBefore;
     nemo::eval::ViewerCacheCounts buildAfter;
     std::uint64_t generation = 1;
+    std::uint64_t buildRetries = 0;
     double editProbeMs = 0.0;
     {
         nemo::eval::ViewerSession session(*instance, *device, *allocator, shaders, ocioConfigPath, gpuContributions);
         session.configureCache(cacheOptions);
         buildBefore = session.cacheCounts();
-        if ((!options.viewAfter.empty() || options.edit.requested()) && buildBefore.diskBytes != 0)
+        if (options.edit.requested() && buildBefore.diskBytes != 0)
             throw std::invalid_argument("invalidation probes require an empty cache directory");
         const std::uint64_t revision = loaded.document.stateRevision();
         for (std::size_t requestIndex = 0; requestIndex < options.requestedFrames.size(); ++requestIndex) {
@@ -545,8 +608,10 @@ int runGpuHarness(const CacheCommandOptions& options, Json& report,
             const auto renderStart = Clock::now();
             // The returned ViewerFrame owns a completed immutable GPU image. It
             // is intentionally scoped to this iteration: the harness never
-            // retains a 200-frame float history.
-            nemo::eval::ViewerFrame frame = session.render(loaded.document, request, 10'000'000'000ULL, generation);
+            // retains a float history. A frame whose retained blocks are still
+            // loading (fresh-process reopen) is retried, never re-rendered.
+            nemo::eval::ViewerFrame frame = retryPending(
+                [&] { return session.render(loaded.document, request, 10'000'000'000ULL, generation); }, buildRetries);
             actualRepresentationWidth = frame.layout.width;
             actualRepresentationHeight = frame.layout.height;
             buildLatencies.push_back(elapsedMs(renderStart, Clock::now()));
@@ -556,17 +621,16 @@ int runGpuHarness(const CacheCommandOptions& options, Json& report,
                 // never speculative range filling.
                 ++generation;
                 const auto retryStart = Clock::now();
-                [[maybe_unused]] nemo::eval::ViewerFrame retry =
-                    session.render(loaded.document, request, 10'000'000'000ULL, generation);
+                [[maybe_unused]] nemo::eval::ViewerFrame retry = retryPending(
+                    [&] { return session.render(loaded.document, request, 10'000'000'000ULL, generation); },
+                    buildRetries);
                 buildLatencies.push_back(elapsedMs(retryStart, Clock::now()));
             }
             const auto backlog = session.cacheCounts();
-            if (backlog.pendingFrames + backlog.activeFrames >= cacheOptions.maxPendingFrames ||
-                ((requestIndex + 1) % static_cast<std::size_t>(options.chunkFrames) == 0 &&
-                 backlog.pendingFrames != 0)) {
-                // Explicit range caching may backpressure at a chunk
-                // boundary. This keeps the queue bounded without dropping
-                // requested outputs; the elapsed drain remains in buildMs.
+            if (backlog.pendingFrames + backlog.activeFrames >= cacheOptions.maxPendingFrames) {
+                // The writer queue is bounded by frames AND bytes; an explicit
+                // range build drains at the frame bound so requested outputs
+                // are never dropped, and the elapsed drain stays in buildMs.
                 session.flushCache();
             }
             ++generation;
@@ -575,7 +639,7 @@ int runGpuHarness(const CacheCommandOptions& options, Json& report,
         // build phase and happens before the independent replay session opens.
         session.flushCache();
         buildAfter = session.cacheCounts();
-        if (!options.viewAfter.empty() || options.edit.requested()) {
+        if (options.edit.requested()) {
             const auto probeStart = Clock::now();
             report["invalidation_probes"] =
                 probeInvalidation(session, loaded.document, options, generation, contributions);
@@ -587,6 +651,11 @@ int runGpuHarness(const CacheCommandOptions& options, Json& report,
     }
     report["request"]["actual_representation_width"] = actualRepresentationWidth;
     report["request"]["actual_representation_height"] = actualRepresentationHeight;
+    if (actualRepresentationWidth > 0 && actualRepresentationHeight > 0) {
+        report["request"]["bc7_payload_bytes"] =
+            nemo::gpu::bc7PayloadBytes(static_cast<std::uint32_t>(actualRepresentationWidth),
+                                       static_cast<std::uint32_t>(actualRepresentationHeight));
+    }
     const double buildMs = elapsedMs(buildStart, Clock::now()) - editProbeMs;
     const auto delta = [](std::uint64_t after, std::uint64_t before) {
         return after >= before ? after - before : 0ULL;
@@ -602,15 +671,25 @@ int runGpuHarness(const CacheCommandOptions& options, Json& report,
         {"latency", latencyJson(buildLatencies, "cold_build")},
         {"reusable_fps", reusableFps},
         {"reusable_fps_scope", "finalized published viewer frames divided by complete cache-build duration"},
-        {"cache_build_duration_scope", "explicit requested renders plus asynchronous chunk finalization"}};
-    report["transfer_costs"] = encodeStatsJson(buildAfter.encode);
-    report["transfer_costs"]["scope"] =
-        "encoder conversion, device bridge, codec and mux; excludes source decode, graph evaluation, "
-        "presentation and separately reported diagnostic readbacks";
+        {"replay_pending_retries", buildRetries},
+        {"cache_build_duration_scope", "explicit requested renders plus asynchronous BC7 encode/upload finalization"}};
+    report["cache_accounting"] = {
+        {"encoded_frames", buildAfter.encodedFrames},
+        {"uploaded_frames", buildAfter.uploadedFrames},
+        {"resident_frames", buildAfter.residentFrames},
+        {"resident_bytes", buildAfter.residentBytes},
+        {"compressed_hot_hits", buildAfter.compressedHotHits},
+        {"compressed_hot_bytes", buildAfter.compressedHotBytes},
+        {"pending_bytes", buildAfter.pendingBytes},
+        {"disk_bytes", buildAfter.diskBytes},
+        {"scope", "BC7 block encode, compressed upload, resident/hot-set and disk accounting; excludes source decode, "
+                  "graph evaluation, presentation and separately reported diagnostic readbacks"}};
     report["backlog"] = {{"pending_frames_after_flush", buildAfter.pendingFrames},
                          {"active_frames_after_flush", buildAfter.activeFrames},
                          {"peak_pending_frames", buildAfter.peakPendingFrames},
+                         {"pending_bytes_after_flush", buildAfter.pendingBytes},
                          {"max_pending_frames", cacheOptions.maxPendingFrames},
+                         {"max_pending_bytes", cacheOptions.maxPendingBytes},
                          {"admission_rejected", buildAfter.admissionRejected},
                          {"admission_dropped", buildAfter.admissionDropped},
                          {"disk_bytes", buildAfter.diskBytes}};
@@ -618,32 +697,84 @@ int runGpuHarness(const CacheCommandOptions& options, Json& report,
     const std::vector<std::int64_t> replayFrames = replaySequence(options);
     std::vector<double> replayLatencies;
     double replayDiagnosticMs = 0.0;
+    std::uint64_t replayRetries = 0;
+    std::uint64_t replayBc7Frames = 0;
     nemo::eval::ViewerCacheCounts replayBefore;
     nemo::eval::ViewerCacheCounts replayAfter;
     nemo::CacheCounts replayReuseBefore;
     nemo::CacheCounts replayReuseAfter;
-    const auto replayStart = Clock::now();
+    auto replayStart = Clock::now();
+    const auto replayRequest = makeRequest(loaded.document, options, 0);
+    const auto replayRevision = loaded.document.stateRevision();
     {
         nemo::eval::ViewerSession replay(*instance, *device, *allocator, shaders, ocioConfigPath, gpuContributions);
         replay.configureCache(cacheOptions);
         replayBefore = replay.cacheCounts();
         replayReuseBefore = replay.reuseCounts();
         for (const std::int64_t frameNumber : replayFrames) {
-            const nemo::EvaluationRequest request = makeRequest(loaded.document, options, frameNumber);
+            auto request = replayRequest;
+            request.localTime = frameNumber;
             const auto renderStart = Clock::now();
-            nemo::eval::ViewerFrame frame = replay.render(loaded.document, request, 10'000'000'000ULL, generation++);
+            const auto replayGeneration = generation++;
+            nemo::eval::ViewerFrame frame = retryPending(
+                [&] { return replay.render(loaded.document, request, 10'000'000'000ULL, replayGeneration); },
+                replayRetries);
             replayLatencies.push_back(elapsedMs(renderStart, Clock::now()));
+            if (frame.replay)
+                ++replayBc7Frames;
             if (options.fidelity && !fidelityReplay && frameNumber == fidelityFrame) {
+                if (!frame.replay)
+                    throw std::runtime_error("fidelity: the requested frame was not served from the BC7 cache");
                 const auto diagnosticStart = Clock::now();
-                fidelityReplay = diagnosticReadback(frame, *device, *allocator);
+                fidelityReplay =
+                    diagnosticReadback(frame, *device, *allocator, presentationSpirv, bc7Spirv, 10'000'000'000ULL);
                 ++diagnosticReadbacks;
                 replayDiagnosticMs += elapsedMs(diagnosticStart, Clock::now());
             }
         }
+        // Reopening validates persisted identities against this document once.
+        // Ordinary indexed replay is a separate phase: its API has no Document
+        // and cannot silently hide description/planning behind a cache hit.
+        const auto reopenedCounts = replay.cacheCounts();
+        const bool reopenedAllHit = replayBc7Frames == replayFrames.size() &&
+                                    reopenedCounts.misses == replayBefore.misses &&
+                                    replay.reuseCounts().misses == replayReuseBefore.misses;
+        report["reopened_replay"] = {
+            {"duration_ms", elapsedMs(replayStart, Clock::now()) - replayDiagnosticMs},
+            {"latency", latencyJson(replayLatencies, "reopened_replay")},
+            {"cache_counts", cacheCountsJson(reopenedCounts)},
+            {"replay_pending_retries", replayRetries},
+            {"all_cache_hits", reopenedAllHit},
+            {"scope", "fresh-session identity validation and compressed disk preparation; first access may plan"}};
+        report["assertions"]["reopened_cache_hits"] = reopenedAllHit;
+        if (!reopenedAllHit)
+            report["errors"].push_back("reopened cache did not serve every requested frame without live evaluation");
+        replayBefore = reopenedCounts;
+        replayReuseBefore = replay.reuseCounts();
+        replayLatencies.clear();
+        replayRetries = 0;
+        replayBc7Frames = 0;
+        replayStart = Clock::now();
+        for (const auto frameNumber : replayFrames) {
+            auto request = replayRequest;
+            request.localTime = frameNumber;
+            const auto started = Clock::now();
+            const auto frame = retryPending(
+                [&] {
+                    auto retained = replay.replay(request, replayRevision);
+                    if (!retained)
+                        throw std::runtime_error("validated cache frame disappeared before indexed replay");
+                    return std::move(*retained);
+                },
+                replayRetries);
+            replayLatencies.push_back(elapsedMs(started, Clock::now()));
+            if (frame.replay)
+                ++replayBc7Frames;
+        }
         replayAfter = replay.cacheCounts();
         replayReuseAfter = replay.reuseCounts();
     }
-    const double replayMs = elapsedMs(replayStart, Clock::now()) - replayDiagnosticMs;
+    const double replayMs = elapsedMs(replayStart, Clock::now());
     const std::uint64_t buildMisses = delta(buildAfter.misses, buildBefore.misses);
     const std::uint64_t replayHits = delta(replayAfter.hits, replayBefore.hits);
     const std::uint64_t replayMisses = delta(replayAfter.misses, replayBefore.misses);
@@ -651,6 +782,7 @@ int runGpuHarness(const CacheCommandOptions& options, Json& report,
     const std::uint64_t buildResolved = buildPublished + buildHits;
     const bool allReplayHit = replayHits >= replayFrames.size() && replayMisses == 0;
     const bool noGraphReevaluation = replayGraphMisses == 0;
+    const bool allReplayBc7 = replayBc7Frames == replayFrames.size();
     const bool requestedOnly = buildPublished <= uniqueRequested.size();
     const bool allRequestedResolved = buildResolved >= uniqueRequested.size();
     const bool boundedPending = buildAfter.pendingFrames == 0 && buildAfter.activeFrames == 0 &&
@@ -662,6 +794,9 @@ int runGpuHarness(const CacheCommandOptions& options, Json& report,
                              {"cache_counts", cacheCountsJson(replayAfter)},
                              {"latency", latencyJson(replayLatencies, "warm_replay")},
                              {"independent_session", true},
+                             {"lookup", "validated concrete replay; no Document access or graph planning"},
+                             {"replay_pending_retries", replayRetries},
+                             {"bc7_frames", replayBc7Frames},
                              {"timing_scope", "request through GPU-complete ViewerFrame; not visible-surface latency"}};
     report["assertions"]["requested_only"] = requestedOnly;
     report["assertions"]["requested_only_detail"] = "published viewer outputs are bounded by unique explicit requests; "
@@ -669,6 +804,7 @@ int runGpuHarness(const CacheCommandOptions& options, Json& report,
     report["assertions"]["all_requested_resolved"] = allRequestedResolved;
     report["assertions"]["replay_all_cache_hits"] = allReplayHit;
     report["assertions"]["replay_graph_not_reevaluated"] = noGraphReevaluation;
+    report["assertions"]["replay_frames_are_bc7"] = allReplayBc7;
     report["assertions"]["bounded_pending_queue"] = boundedPending;
     report["assertions"]["visible_latency_measured"] = false;
     report["assertions"]["visible_latency_note"] = "This headless command measures request-to-GPU-ready only; the UI "
@@ -686,28 +822,30 @@ int runGpuHarness(const CacheCommandOptions& options, Json& report,
                                  {"build_encoded_frame_delta", buildEncoded},
                                  {"build_published_frame_delta", buildPublished},
                                  {"requested_unique_frames", uniqueRequested.size()},
-                                 {"replay_frames", replayFrames.size()}};
+                                 {"replay_frames", replayFrames.size()},
+                                 {"replay_bc7_frames", replayBc7Frames}};
     if (options.fidelity) {
         if (!fidelitySource || !fidelityReplay) {
             report["fidelity"] = {{"performed", false},
-                                  {"error", "diagnostic source or replay readback was unavailable"},
+                                  {"error", "diagnostic live reference or BC7 replay sample was unavailable"},
                                   {"readbacks", diagnosticReadbacks}};
-            report["errors"].push_back("fidelity diagnostic requested but source/replay readback was unavailable");
+            report["errors"].push_back("fidelity diagnostic requested but the live reference or BC7 sample was "
+                                       "unavailable");
         } else {
             report["fidelity"] = fidelityJson(*fidelitySource, *fidelityReplay);
             report["fidelity"]["readbacks"] = diagnosticReadbacks;
-            report["fidelity"]["replay_readback_ms"] = replayDiagnosticMs;
+            report["fidelity"]["replay_sample_ms"] = replayDiagnosticMs;
             report["fidelity"]["device_to_host_bytes"] = diagnosticReadbacks *
                                                          static_cast<std::uint64_t>(fidelitySource->width()) *
                                                          fidelitySource->height() * 4 * sizeof(float);
             if (!report["fidelity"]["within_declared_tolerance"].get<bool>())
-                report["errors"].push_back("fidelity diagnostic exceeded its declared 4:2:0 tolerance");
+                report["errors"].push_back("fidelity diagnostic exceeded its declared BC7-loss tolerance");
         }
     } else {
         report["fidelity"] = {{"performed", false},
                               {"readbacks", 0},
-                              {"note", "Pass --fidelity for one bounded source-view and cached-replay diagnostic "
-                                       "comparison; no routine full-frame CPU readback is performed."}};
+                              {"note", "Pass --fidelity for one bounded live-reference and sampled-BC7-replay "
+                                       "diagnostic comparison; no routine full-frame CPU readback is performed."}};
     }
     report["stale_supersede"] = {
         {"requested", options.staleSupersede},
@@ -722,9 +860,11 @@ int runGpuHarness(const CacheCommandOptions& options, Json& report,
             "not every explicitly requested frame resolved as a cache hit or finalized published frame");
     if (!allReplayHit)
         report["errors"].push_back(
-            "independent replay did not resolve every requested frame from finalized cache chunks");
+            "independent replay did not resolve every requested frame from retained BC7 cache entries");
     if (!noGraphReevaluation)
         report["errors"].push_back("independent replay re-evaluated graph work for a cached frame");
+    if (!allReplayBc7)
+        report["errors"].push_back("independent replay returned a non-BC7 frame for a requested frame");
     if (!boundedPending)
         report["errors"].push_back("cache pending/active-frame bound was exceeded or did not drain at flush");
     if (buildAfter.admissionRejected != 0 || buildAfter.admissionDropped != 0)

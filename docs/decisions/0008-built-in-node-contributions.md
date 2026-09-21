@@ -138,9 +138,11 @@ plane, including alpha-only data, is opaque gray, while an ordered selection of
 multiple data planes maps its first up-to-four selected planes positionally
 onto the presentation RGBA and bypasses OCIO the same way; that display mapping
 neither creates nor renames composition channels. Projection policy is part of
-viewer-cache identity. Decoded replay is already packed RGBA and is retained
-directly, with a device-side crop only for codec padding. `cropNativeImage`
-copies a packed region once or each scalar plane using its logical height.
+viewer-cache identity. Issue #106 replaces float/video replay with a separately
+typed display-referred BC7 texture. Replay samples that texture directly into
+the shared RGBA8 presentation surface; it never enters contribution execution,
+native working-image projection or source-color interpretation. Compressed edge
+blocks preserve logical odd dimensions without a float crop/reconstruction.
 
 Still/software RGBA upload copies interleaved values directly into staging;
 other channel counts transpose without padding or loss. Hardware decode converts

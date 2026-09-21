@@ -17,11 +17,13 @@ them.
   `ViewerRuntime`/`ViewerScheduler`, including the cache-viewer path); an empty
   path keeps the existing `$OCIO` environment fallback resolved on the first
   viewing request, and no process-global environment state is mutated.
-- **Display-referred replay**: viewer-cache chunks are the baked
-  display-referred representation. Decode them without re-applying the
-  source linearization or view transform; interpretation metadata
-  (transfer and primaries included) travels inside the chunk and round-trips
-  through pixel verification.
+- **Display-referred replay**: viewer-cache frames are independent BC7 RGBA
+  representations of the already transformed display samples (#106). Sample
+  `VK_FORMAT_BC7_UNORM_BLOCK` directly into shared RGBA8 presentation, without
+  source linearization, an sRGB sampling decode or another viewing transform.
+  Explicit color/config/view identity, alpha association and per-frame geometry
+  travel with the record. This is lossy SDR display data, never a working-space
+  picker, effect input or delivery source.
 
 ### Input color (an input transform is not a viewing transform)
 
@@ -138,7 +140,7 @@ Issue #43 evidence: [`session.json`](../evidence/assets/issue43-media-import/ses
 | Queue serialization (including FFmpeg sharing the application device), submission, completion identity, resource retirement | GPU execution mechanism (#22) |
 | Request prioritization, publication policy, UI responsiveness | Scheduler (#13) |
 | Byte budgets, admission, eviction of cached results | Cache accounting (#14) |
-| Viewer-cache storage and replay orchestration | #12 |
+| Viewer-cache indexed packs, compressed hot tiers and asynchronous readiness | `eval::ViewerCache` (#106, superseding #12 video storage) |
 | Media contract correctness: interpretation, format validation, FFmpeg ownership | #21 |
 | Effective source request: node-vs-shared mapping, coverage and policy resolution | Core `SourceRequest` (#79), consumed by every provider/session/inspector |
 | Encoded RGB interpretation and the retained OCIO conversion | Media input-color owner (#81): `resolveInputColor`/`InputColorCache`, `OcioConfigSnapshot` |
@@ -151,15 +153,75 @@ mean*; neither re-implements the other.
 
 ## Execution shape
 
-- Device-resident encode: encoders consume the device-resident viewer
-  representation (interop), not CPU staging by default; a CPU staging path
-  is a measured, disclosed cost, never the assumed interface.
+- Device-resident viewer compression uses Vulkan compute BC7 blocks, then
+  transfer to a sampled BC7 image. Only completed compressed blocks may be read
+  back for persistence; disk replay uploads blocks, not reconstructed pixels.
+  The writer is asynchronous and byte-bounded; foreground presentation does
+  not wait for encoding or disk commits. Source decode and delivery retain
+  their independent real media paths.
+- Disk accounting includes physical pack headers, live records and dead or
+  interrupted tails. The writer reclaims whole cache-owned reader-free packs
+  before an append would exceed the budget; it never rewrites a reader's
+  offsets. Logical replacement does not release a physical-byte charge.
 - No per-node idle: batch compatible barriers and dispatches into
   submissions; no routine `vkDeviceWaitIdle` per node or dispatch, and no
   host wait per barrier.
 - Pool and reuse (command buffers, fences, pipelines, images) only where a
   measurement shows the benefit; a reduced API-call count alone is not a
   performance win.
+
+### Viewer replay integration
+
+Use `ViewerSession`'s validated frame records before graph description/planning.
+An already validated hit reuses its exact per-frame description and request;
+edits/reloads/view changes revalidate effective identity rather than trusting
+the frame number. `Loading` coalesces with asynchronous preparation, not live
+evaluation. Ordered transport preparation and latest-wins interaction remain
+distinct inside `ViewerScheduler`/`ViewerRuntime`. Read-ahead visits known
+cached entries only; an absent neighbor never starts the graph.
+The controller captures one immutable `ViewerPlaybackContext` per uninterrupted
+view context. Ordinary ticks share its document and precomputed revision;
+seek/edit/view replacement retires the context instead of copying or hashing
+the full graph per frame.
+Equivalent targets may share compressed pixels, never producer request identity:
+first access and indexed replay bind the validated consumer's request and
+description. Cache results expose the shared image/layout, not a producer target.
+
+Live float images and `gpu::Bc7Image` are distinct representations.
+`ViewerPresentation` samples the latter directly on the execution device into
+the existing shared RGBA8 allocation. Qt retains the established separate-device
+external-memory/semaphore handoff. Compressed images are not imported by Qt.
+Keep logical odd dimensions, signed ROI, sampling lattice and alpha metadata;
+BC7 block padding never changes the presented rectangle.
+
+`ViewerCache` owns pack commit/recovery and cache-only reclamation. Its new
+namespace does not interpret or migrate old MP4 caches. Actual allocation
+charges, active reservations and eligible eviction belong to `gpu::Allocator`;
+resource tokens keep active work charged through completion. Cache RAM/disk
+limits and metadata/queue bounds are additional policy, not a private allocator.
+Capability, corruption and storage failures stay explicit while live rendering
+remains authoritative.
+
+The existing headless command exercises the same production path:
+
+```bash
+build/debug/apps/nemo-cli/nemo-cli cache-viewer project.nemo \
+  --cache-dir /absolute/disposable-cache --frames 1,7,13 \
+  --replay reverse --width 1920 --height 1080 --fidelity
+```
+
+Forward/random replay and fresh-process reopening use the same command.
+The report separates `reopened_replay` (initial document/identity validation
+and compressed disk preparation, which may plan) from `warm_replay` (validated
+concrete replay through an API with no `Document` access or live-render fallback).
+Codec, GOP, chunk-size and bitrate controls no longer exist for viewer caches;
+delivery bitrate controls remain valid. CLI pixels/reopening are not evidence
+of native visible playback cadence; exercise the actual viewer separately.
+
+Issue #106's retained [verification record](../evidence/assets/issue106-bc7/verification.json)
+separates native window/pixel evidence from headless correctness and sanitizer
+checks. The 200-frame RAM/disk runs measure Qt presentation-callback delivery,
+not physical scanout; they are not a general throughput or Windows claim.
 
 ## Native effects — node-local execution
 
@@ -184,9 +246,10 @@ Input geometry carries the actual format's components and resolved role indices;
 canonical RGBA uses direct vector loads/stores, while reordered and auxiliary
 channels use the general path. Scalar copies use logical plane height.
 Only complete primary/root RGB receives color conversion; alpha-only and
-auxiliary data bypass it. Identity packed viewer/replay images are retained
-directly; other views use device-side projection. Shuffle uses these same
-owners and the exact mapping/failure policies in ADR-0008.
+auxiliary data bypasses it. Identity packed live viewer images are retained
+directly; other views use device-side projection. BC7 replay bypasses this
+working-image path. Shuffle uses these same owners and the exact mapping/failure
+policies in ADR-0008.
 `GpuPreparation` supplies owned payload/weight/geometry values, local passes and
 per-scratch coverage. Image-sampling kernels address signed producer coverage,
 not the output raster's dimensions; final writes respect described data support.
@@ -446,20 +509,22 @@ its accepted full-frame image contracts.
 
 Every metric states its scope and units; transfers also state bytes and direction:
 
-- **Scope**: exactly which stages are inside the timer — CPU
-  conversion/allocation/packing vs the host→device transfer vs encoder
-  submission/drain. Report initialization and mux/finalization separately
-  and include them in total independently reusable-chunk cost. Per-frame
-  averages must name their denominator and included stages.
+- **Scope**: exactly which stages are inside the timer — CPU work, host/device
+  transfers, GPU encoding, upload preparation, persistence or visible
+  presentation. Report initialization and durable pack commit separately.
+  Media delivery additionally reports mux/finalization. Per-frame averages
+  name their denominator and included stages; prepared/submitted counts do
+  not prove displayed cadence.
 - **Units**: consistent ns/ms fields and rendered units that agree; bytes
   moved and host/device direction for every transfer.
 - **Cold/warm**: distinguish first-use from reused resources.
 - **Memory**: attribute process peak RSS separately from decoder surfaces,
   VRAM, and retained source/reference buffers — a process-wide VmHWM is not
   isolated decoder/VRAM accounting.
-- Small diagnostic workloads (e.g. the 640×360 sweep) are evidence about
-  themselves, not the reference gate; the integrated visible-latency
-  benchmark belongs to #16. Corrected codec measurements are #23's.
+- Historical small diagnostic workloads (e.g. the 640×360 codec sweep and
+  #23's codec measurements) describe the retired video-cache path, not BC7
+  performance. #106's native 200-frame playback check is functional cadence
+  evidence, not a codec comparison or closure of the broader #16 benchmark.
 
 ## Native Linux sanitizer environment
 

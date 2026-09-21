@@ -58,6 +58,7 @@ target_link_libraries(nemo_core PUBLIC nlohmann_json::nlohmann_json)
 if(NEMO_BUILD_GPU)
     add_library(nemo_gpu
         gpu/Allocator.cpp
+        gpu/Bc7.cpp
         gpu/Compile.cpp
         gpu/ComputePass.cpp
         gpu/GpuViewingTransform.cpp

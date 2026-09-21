@@ -1,0 +1,9 @@
+{
+  "text": "{\"cache_hit\":false,\"event\":\"viewer_frame_swapped\",\"frame\":0,\"height\":540,\"request_to_swap_ms\":697.135299,\"width\":960}\n{\"cache_hit\":false,\"event\":\"viewer_frame_swapped\",\"frame\":1,\"height\":540,\"request_to_swap_ms\":601.683598,\"width\":960}\n{\"cache_hit\":false,\"event\":\"viewer_frame_swapped\",\"frame\":2,\"height\":540,\"request_to_swap_ms\":422.453713,\"width\":960}\n{\"cache_hit\":false,\"event\":\"viewer_frame_swapped\",\"frame\":3,\"height\":540,\"request_to_swap_ms\":544.736493,\"width\":960}\n{\"cache_hit\":false,\"event\":\"viewer_frame_swapped\",\"frame\":4,\"height\":540,\"request_to_swap_ms\":447.408717,\"width\":960}\n{\"cache_hit\":false,\"event\":\"viewer_frame_swapped\",\"frame\":5,\"height\":540,\"request_to_swap_ms\":442.202874,\"width\":960}\n{\"cache_hit\":false,\"event\":\"viewer_frame_swapped\",\"frame\":6,\"height\":540,\"request_to_swap_ms\":532.675834,\"width\":960}\n{\"cache_hit\":false,\"event\":\"viewer_frame_swapped\",\"frame\":7,\"height\":540,\"request_to_swap_ms\":430.581783,\"width\":960}\n{\"boundary\":\"Qt frameSwapped; window-system handoff, not scanout\",\"event\":\"viewer_latency_summary\",\"p95_ms\":697.135299,\"samples\":8}\n[issue106-source-smoke: ready; cursor=1076]",
+  "details": {
+    "op": "logs",
+    "cursor": 1076,
+    "timedOut": false,
+    "state": "ready"
+  }
+}

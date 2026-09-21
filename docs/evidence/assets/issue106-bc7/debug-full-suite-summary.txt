@@ -1,0 +1,129 @@
+ 991/1001 Test  #991: MediaLibraryModel.BrowsingNeverOpensSourcesButExplicitOpenRoutesPerGroup ...........................................   Passed    0.07 sec
+          Start  992: MediaLibraryModel.RevealActivatesExistingPanelPerGroupAndCreatesOnlyWhenAbsent
+ 992/1001 Test  #992: MediaLibraryModel.RevealActivatesExistingPanelPerGroupAndCreatesOnlyWhenAbsent .....................................   Passed    0.08 sec
+          Start  993: MediaLibraryModel.InsertionIntentPreservesOrderRepeatsAndPerEntryMarks
+ 993/1001 Test  #993: MediaLibraryModel.InsertionIntentPreservesOrderRepeatsAndPerEntryMarks .............................................   Passed    0.08 sec
+          Start  994: MediaLibraryModel.RuntimeResultIsRejectedAfterRelinkAndReprobedPerEntry
+ 994/1001 Test  #994: MediaLibraryModel.RuntimeResultIsRejectedAfterRelinkAndReprobedPerEntry ............................................   Passed    0.41 sec
+          Start  995: MediaLibraryModel.ReprobePicksUpOverwrittenMediaAndReplacesItsThumbnail
+ 995/1001 Test  #995: MediaLibraryModel.ReprobePicksUpOverwrittenMediaAndReplacesItsThumbnail ............................................   Passed    0.40 sec
+          Start  996: MediaLibraryModel.ProjectResetDropsRuntimeStateAndRepopulatesLazily
+ 996/1001 Test  #996: MediaLibraryModel.ProjectResetDropsRuntimeStateAndRepopulatesLazily ................................................   Passed    0.40 sec
+          Start  997: MediaLibraryModel.MetadataEditsKeepAProbeFreshButAViewingTransformChangeInvalidatesIt
+ 997/1001 Test  #997: MediaLibraryModel.MetadataEditsKeepAProbeFreshButAViewingTransformChangeInvalidatesIt ..............................   Passed    0.40 sec
+          Start  998: MediaLibraryModel.RuntimeProbeOverlaysDisplayedRecordWithoutAuthoredMutation
+ 998/1001 Test  #998: MediaLibraryModel.RuntimeProbeOverlaysDisplayedRecordWithoutAuthoredMutation .......................................   Passed    0.36 sec
+          Start  999: MediaLibraryModel.RuntimeCompletionSurvivesReentrantCatalogMutationDuringNotification
+ 999/1001 Test  #999: MediaLibraryModel.RuntimeCompletionSurvivesReentrantCatalogMutationDuringNotification ..............................   Passed    0.33 sec
+          Start 1000: MediaLibraryModel.ReentrantProjectResetCannotLeakAnOldRuntimeOutcome
+1000/1001 Test #1000: MediaLibraryModel.ReentrantProjectResetCannotLeakAnOldRuntimeOutcome ...............................................   Passed    0.52 sec
+          Start 1001: MediaLibraryModel.RuntimeOfflineDrivesTheOfflineFilterWithoutAuthoringMetadata
+1001/1001 Test #1001: MediaLibraryModel.RuntimeOfflineDrivesTheOfflineFilterWithoutAuthoringMetadata .....................................   Passed    0.14 sec
+
+99% tests passed, 5 tests failed out of 1001
+
+Total Test time (real) = 363.78 sec
+
+The following tests did not run:
+	406 - ExtensionTest.InstalledRootsAreExplicitAndAPackagelessRootContributesNothing (Skipped)
+	407 - ExtensionTest.WarpIdentityNeutralAndAuthoredResetAreExactBypasses (Skipped)
+	408 - ExtensionTest.WarpMappingMatchesIndependentPixelsAtKnotsCellEdgesAndSeam (Skipped)
+	409 - ExtensionTest.WarpPreservesLuminanceUnclampedExtremesAlphaAndDataOnlyChannels (Skipped)
+	410 - ExtensionTest.FoldProducingMeshEditsAreRefusedAtomicallyIncludingGestures (Skipped)
+	411 - ExtensionTest.AuthoredMeshCoordinatesAnimateThroughSharedHistoryAndEvaluateAtTime (Skipped)
+	412 - ExtensionTest.SavedProjectKeepsAuthoredMeshAndRecoversWhenThePackageIsAbsent (Skipped)
+	413 - ExtensionTest.DataRgbAndPremultipliedSamplesKeepTheirDeclaredMeaning (Skipped)
+	414 - ExtensionTest.ActivationRefusesUnsafeFilesAndFailedDependenciesWithoutHidingSiblings (Skipped)
+	415 - ExtensionTest.RefusalDiagnosticsNeverHideTheSupportedPackage (Skipped)
+	416 - ExtensionTest.RegistrationIdentityFollowsTheDeclaredPackageVersionWhileStateStaysCompatible (Skipped)
+	417 - ExtensionTest.DiscoveryListsDeclaredMetadataAndExecutesNothingThatIsNotEnabled (Skipped)
+	418 - ExtensionTest.PersistedEnablementIsTrustedByLocationAndNotByIdentity (Skipped)
+	419 - ExtensionTest.DisabledAndMissingPrerequisitesAreDiagnosedAndNeverEnabledImplicitly (Skipped)
+	420 - ExtensionTest.DuplicateIdentitiesRefuseEveryOffenderAndNameEveryLocation (Skipped)
+	421 - ExtensionTest.MissingAndMovedLinkedFoldersStayListedWithAUsefulStatus (Skipped)
+	422 - ExtensionTest.RemovingALinkedRegistrationLeavesThePackageByteIdentical (Skipped)
+	423 - ExtensionTest.CorruptOrUnwritablePackageSettingsFailClosedAndAreReported (Skipped)
+	424 - ExtensionTest.AnIncompatiblePackageStillReportsTheMetadataItDeclared (Skipped)
+	426 - ExtensionTest.ColorWarpCpuAndGpuMatchTheIndependentMapping (Skipped)
+	427 - ExtensionTest.InstalledCallbacksAndLibraryOutliveTheLoaderAndNativeWork (Skipped)
+	428 - ExtensionTest.InstalledChainIsDescribedAndDeliveredByTheQueuesOwnInventory (Skipped)
+	845 - WorkspaceDragTest.SettingsTrustChangesOnlyTheNextNormalLaunch (Skipped)
+	897 - ViewerDestinationSurface.ViewerViewsStayIndependentPerPanel (Skipped)
+	898 - ViewerDestinationSurface.TwoViewerPanelsRenderIndependentDestinations (Skipped)
+	899 - ViewerDestinationSurface.CachedToLiveTransitionKeepsTransportPacing (Skipped)
+	900 - RamRetainedRangeReplay.CachedRangePlaysForwardAndReverseFromTheOrderedWindow (Skipped)
+	901 - DiskBackedRangeReplay.CachedRangePlaysForwardAndReverseFromTheOrderedWindow (Skipped)
+	903 - ReadViewerSurface.PngSelectedInReadAppearsInItsAttachedViewer (Skipped)
+	904 - ReadViewerSurface.ReadTimingRejectionsKeepGeometryAndExactIntegerAuthoring (Skipped)
+	905 - ReadViewerSurface.GraphViewerUsesTheAttachedTargetsReferenceNotTheLegacySrcKey (Skipped)
+	906 - ReadViewerSurface.ReplacingTheReadPathUpdatesTheViewerAndUndoRestoresIt (Skipped)
+	907 - ReadViewerSurface.ClearingTheReadShowsTheExplicitEmptyState (Skipped)
+	908 - ReadViewerSurface.OfflineReadReportsItsPathOnTheViewer (Skipped)
+	909 - ReadViewerSurface.DownstreamEffectKeepsItsSingleMediaSourcesDomain (Skipped)
+	910 - ReadViewerSurface.MixedMediaSourcesKeepMainInputFormatWithoutStretching (Skipped)
+	911 - ReadViewerSurface.RetiredContinuousZoomReopensAtItsScaleAndUnreadableStateFits (Skipped)
+	912 - ReadViewerSurface.UserDocumentDisplaysItsAttachedRead (Skipped)
+	913 - ReadViewerSurface.ViewerWheelZoomIsContinuousAnchoredAndReversible (Skipped)
+	914 - ReadViewerSurface.ViewerViewDrivesTheRequestRegionAndSampling (Skipped)
+	915 - ReadViewerSurface.ViewerDragPanKeepsTheZoomAndTheDocument (Skipped)
+	916 - ReadViewerSurface.ViewerZoomControlStatesAndAcceptsAnyScale (Skipped)
+	917 - ReadViewerSurface.ForceFullFrameCoversTheWholeDomainAndKeepsTheView (Skipped)
+	918 - ShuffleSurface.NativeSocketDragCancellationAndHistory (Skipped)
+	919 - ShuffleSurface.CreatingAnUnwiredOutputIsAtomicAndStartsAtZero (Skipped)
+	920 - ShuffleSurface.InspectorColumnSwitchRetainsTheOpenMapping (Skipped)
+	921 - ShuffleSurface.NamedDataLayerDoesNotSubstitutePixelsWhenItDisappears (Skipped)
+	922 - ShuffleSurface.RefusedViewPublishesTheCurrentFramesChannelsAndRecoversBySelection (Skipped)
+	923 - ShuffleSurface.ModifierRoutingUsesConsecutiveSourcesAndExactNamesAcrossGroups (Skipped)
+	924 - ShuffleSurface.CrossGroupWiresFollowTheirSelectorThroughReorderAndDisconnection (Skipped)
+	925 - ShuffleSurface.SharedRoutingKeysHoldTheirValuesAfterHistoryAndReopen (Skipped)
+	926 - ShuffleSurface.MissingCustomEditorKeepsGenericMappingEditableAndRecovers (Skipped)
+	927 - ShuffleSurface.LayerMenusKeepAuthoredReadoutsWhileDescriptionsChange (Skipped)
+	928 - ShuffleSurface.OutputLayerMenuUsesRealChannelsAndOpensTheSharedNewDialog (Skipped)
+	929 - ShuffleSurface.AlphaOnlyViewingBypassesColorAndCreatedRgbUsesNamedRoles (Skipped)
+	930 - ForceFullFrameSplitSurface.ForceFullFrameStaysInsideItsPanel (Skipped)
+	931 - PreparedConfigSurface.SamePathConfigRewriteRefreshesOnFirstReplacement (Skipped)
+	932 - CropReformatSurface.Issue92CropHandlesDragTheAuthoredBox (Skipped)
+	933 - CropReformatSurface.Issue92CropHandlesRequireTheInspectedDirectlyViewedCrop (Skipped)
+	934 - CropReformatSurface.Issue92CropEscapeCancelsTheGesture (Skipped)
+	935 - CropReformatSurface.Issue92CropInspectionChangeCancelsTheGesture (Skipped)
+	936 - CropReformatSurface.Issue92CropCoordinatesShareTypedAndKeyedSemantics (Skipped)
+	937 - CropReformatSurface.Issue92ExposedCropCoordinateEditsOnlyItsInstance (Skipped)
+	938 - CropReformatSurface.Issue92CropCenterAndCornerPreserveCoordinatesAndRedo (Skipped)
+	939 - CropReformatSurface.Issue92CropTracksItsInputFormatAndCancelsAnUpstreamChange (Skipped)
+	940 - CropReformatSurface.Issue92ReformatCropHandlesMapOutputOffsetsBack (Skipped)
+	941 - CropReformatSurface.Issue92CropHandlesHoldUnderZoomParProxyAndReopen (Skipped)
+	942 - CropReformatSurface.Issue92ReformatOrientationUsesSharedBooleanEditing (Skipped)
+	943 - CropReformatSurface.Issue92ReformatFormatEditorAppliesPresetsByValue (Skipped)
+	944 - CropReformatSurface.Issue94WriteInspectorEditsAndDeliversExplicitly (Skipped)
+	945 - CropReformatSurface.Issue102ViewportPickSamplesTheDisplayedTarget (Skipped)
+	946 - CropReformatSurface.AbandonedPickerYieldsToAnotherParameter (Skipped)
+	947 - CropReformatSurface.RearmedPickerSamplesOnlyTheNewestParameter (Skipped)
+	948 - CropReformatSurface.LateSampleNeverLandsAfterAnotherParameterStarts (Skipped)
+	949 - CropReformatSurface.CheckboxChoiceAndScrubEditsCancelAnArmedPick (Skipped)
+	950 - CropReformatSurface.InspectorPickerRetiresViewerHandleGesture (Skipped)
+	951 - RotoSurface.RectangleFollowsAspectCorrectImageAndUndoesInOneStep (Skipped)
+	952 - RotoSurface.EscapeDiscardsDraftAndMiddlePanDoesNotAuthorShapes (Skipped)
+	953 - RotoSurface.CurveToolsPublishClosedEditableContours (Skipped)
+	954 - RotoSurface.PointDragCommitsOnceAndUndoCancelsAnOpenDraftFirst (Skipped)
+	955 - RotoSurface.InspectorReflectsPublishedValuesUndoAndKeyedFrames (Skipped)
+	956 - RotoSurface.NestedGroupsAndLocksUseTheNativeHierarchy (Skipped)
+	957 - RotoSurface.MirroredFeatherAndTangentHandlesKeepThePointAnchored (Skipped)
+	958 - RotoSurface.DenseAnimatedShapesRemainEditableAtProxyAndUpstreamFormatChanges (Skipped)
+	959 - RotoSurface.SavedRotoReopensWithoutRetainingAnOldProjectDraft (Skipped)
+	960 - RotoSurface.PointTopologyAndLifetimeActionsUseAtomicHistory (Skipped)
+	961 - RotoSurface.InspectorOnlyScrubCancelsBeforeUndoingTheDocument (Skipped)
+	962 - RotoSurface.InspectorFlagsReflectUndoAndSelection (Skipped)
+	963 - RotoSurface.MarqueeAndShiftSelectionMoveOnlyChosenPointsAndCancelAtomically (Skipped)
+	964 - RotoSurface.DownstreamEditingRequiresAnUnambiguousCoordinateMapping (Skipped)
+	965 - RotoSurface.SelectionBoxScalesAndRotatesPointsAndTangentsInImageSpace (Skipped)
+	967 - ExtensionSurface.Issue37InstalledMeshEditorAuthorsThroughTheSharedInspector (Skipped)
+	968 - AbsentPackageSurface.Issue37SavedPanelLayoutSurvivesPackageAbsence (Skipped)
+	969 - RestoredPackageSurface.Issue37ExtensionPanelUsesTheSharedShell (Skipped)
+
+The following tests FAILED:
+	685 - Viewer.PresentationQuantizesExactlyOnceWithoutTransfer (Subprocess aborted)
+	686 - Viewer.PresentationIsolatesDisplayChannels (Subprocess aborted)
+	689 - Viewer.InterpretationMapIsParsedStrictly (Failed)
+	873 - Interactive.TwoViewerDestinationsRenderIndependentlyAndSurviveRetirement (Failed)
+	878 - Interactive.CacheRangeReportsAsynchronousDiskAdmissionFailure (Failed)
+Errors while running CTest

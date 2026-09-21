@@ -1,0 +1,17 @@
+Test project /home/rgame/dev/Nemo_Dev2/build/debug
+    Start 685: Viewer.PresentationQuantizesExactlyOnceWithoutTransfer
+1/6 Test #685: Viewer.PresentationQuantizesExactlyOnceWithoutTransfer .....................   Passed    0.76 sec
+    Start 686: Viewer.PresentationIsolatesDisplayChannels
+2/6 Test #686: Viewer.PresentationIsolatesDisplayChannels .................................   Passed    0.77 sec
+    Start 703: Interactive.SharedCacheIdentitySurvivesPublicationFromTwoDestinations
+3/6 Test #703: Interactive.SharedCacheIdentitySurvivesPublicationFromTwoDestinations ......   Passed    1.22 sec
+    Start 728: ViewerCache.ReplaySeamServesKnownFramesAndNeverRendersUnknownOnes
+4/6 Test #728: ViewerCache.ReplaySeamServesKnownFramesAndNeverRendersUnknownOnes ..........   Passed    1.18 sec
+    Start 873: Interactive.TwoViewerDestinationsRenderIndependentlyAndSurviveRetirement
+5/6 Test #873: Interactive.TwoViewerDestinationsRenderIndependentlyAndSurviveRetirement ...   Passed    1.34 sec
+    Start 878: Interactive.CacheRangeReportsAsynchronousDiskAdmissionFailure
+6/6 Test #878: Interactive.CacheRangeReportsAsynchronousDiskAdmissionFailure ..............   Passed    1.26 sec
+
+100% tests passed, 0 tests failed out of 6
+
+Total Test time (real) =   6.58 sec

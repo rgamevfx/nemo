@@ -45,7 +45,6 @@
 #include "nemo/core/evaluation/NodeContributions.hpp"
 #include "nemo/core/session/ProjectFile.hpp"
 #include "nemo/extensions/InstalledPackages.hpp"
-#include "nemo/media/CodecSweep.hpp"
 #include "nemo/media/ImageIO.hpp"
 #include "nemo/media/ImageSource.hpp"
 #include "nemo/media/Probe.hpp"
@@ -108,14 +107,11 @@ int printUsage() {
                  "          [--first N] [--last N] [--offset N] [--shaders DIR] [--preflight]\n"
                  "  nemo-cli project-session <project.json>  JSON-lines edit/query session\n"
                  "  nemo-cli probe-media [project.json]      hardware codec capability report\n"
-                 "  nemo-cli codec-sweep <tagged-viewer-clip> [--codecs a,b] [--chunks a,b] [--max-frames N]\n"
-                 "          [--width W --height H] [--profile NAME] [--bit-depth N] [--bitrate-kbps N]\n"
 #ifdef NEMO_BUILD_GPU
                  "  nemo-cli cache-viewer <project.json> --cache-dir PATH --frames 1,2,3\n"
                  "          [--network-id ID] [--replay forward|reverse|random] [--width W --height H --scale 1|2|4]\n"
-                 "          [--codec ID --chunk-frames N --bitrate-kbps N --shaders DIR]\n"
-                 "          [--fidelity] [--stale-supersede]\n"
-                 "          [--view-after DISPLAY/VIEW] [--edit-node NAME --edit-key KEY --edit-value VALUE]\n"
+                 "          [--shaders DIR] [--fidelity] [--stale-supersede]\n"
+                 "          [--edit-node NAME --edit-key KEY --edit-value VALUE]\n"
                  "  nemo-cli evaluate-gpu <project.json> --out <file.ppm> [--frame N] "
                  "[--width W] [--height H] [--output NAME] [--network-id ID]\n"
                  "          [--backend slang|glsl] [--shaders <spv-dir>]\n"
@@ -819,69 +815,6 @@ int commandProbeMedia(const std::vector<std::string>& args) {
 #endif
 }
 
-// Tagged display-referred reference preparation, not source/viewer integration.
-int commandCodecSweep(const std::vector<std::string>& args) {
-    if (args.empty())
-        return printUsage();
-    nemo::media::SweepOptions options;
-    const auto positive = [](const std::string& text, const std::string& option) {
-        int64_t value = 0;
-        const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), value);
-        if (error != std::errc{} || end != text.data() + text.size() || value <= 0 ||
-            value > std::numeric_limits<int>::max())
-            throw std::invalid_argument(option + ": expected integer in 1..2147483647, got '" + text + "'");
-        return static_cast<int>(value);
-    };
-    const auto list = [](const std::string& text, const std::string& option) {
-        std::vector<std::string> result;
-        size_t start = 0;
-        do {
-            const auto end = text.find(',', start);
-            auto token = text.substr(start, end == std::string::npos ? end : end - start);
-            if (token.empty() || token.find_first_of(" \t\n\r") != std::string::npos)
-                throw std::invalid_argument(option + ": expected nonempty comma-separated values without whitespace");
-            result.push_back(std::move(token));
-            if (end == std::string::npos)
-                break;
-            start = end + 1;
-        } while (true);
-        return result;
-    };
-    for (size_t i = 1; i < args.size(); i += 2) {
-        const auto& option = args[i];
-        if (i + 1 == args.size())
-            throw std::invalid_argument(option + ": missing value");
-        const auto& value = args[i + 1];
-        if (option == "--codecs") {
-            options.codecs = list(value, option);
-        } else if (option == "--chunks") {
-            options.chunkSizes.clear();
-            for (const auto& token : list(value, option))
-                options.chunkSizes.push_back(positive(token, option));
-        } else if (option == "--max-frames") {
-            options.maxFrames = positive(value, option);
-        } else if (option == "--width") {
-            options.width = positive(value, option);
-        } else if (option == "--height") {
-            options.height = positive(value, option);
-        } else if (option == "--bitrate-kbps") {
-            options.bitrateKbps = positive(value, option);
-        } else if (option == "--bit-depth") {
-            options.bitDepth = positive(value, option);
-        } else if (option == "--profile") {
-            if (value.empty())
-                throw std::invalid_argument(option + ": empty profile");
-            options.profile = value;
-        } else {
-            throw std::invalid_argument("unknown option " + option);
-        }
-    }
-    const auto report = nemo::media::runCodecSweep(args[0], options);
-    std::cout << report.table();
-    return std::ranges::any_of(report.entries, [](const auto& entry) { return entry.measurements.has_value(); }) ? 0
-                                                                                                                 : 1;
-}
-
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -950,14 +883,6 @@ int main(int argc, char** argv) {
 #endif
     if (command == "imageinfo") {
         return commandImageInfo(args);
-    }
-    if (command == "codec-sweep") {
-        try {
-            return commandCodecSweep(args);
-        } catch (const std::exception& error) {
-            std::cerr << "codec-sweep: " << error.what() << "\n";
-            return 1;
-        }
     }
     return printUsage();
 }

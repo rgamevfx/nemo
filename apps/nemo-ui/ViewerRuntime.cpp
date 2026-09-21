@@ -16,6 +16,11 @@ namespace {
 // Reserved destination ids: Interactive = 0 and Cache = 1 are the shared
 // streams, so panel-instance destinations start above them.
 constexpr std::uint32_t kFirstPanelDestination = 2;
+// Cache-progress wake interval: background range admission waits for retained
+// bytes to retire, and loading replay starts here before doubling its backoff.
+// Neither waits for the GUI thread; foreground work wakes the worker immediately.
+constexpr auto kCacheProgressInterval = std::chrono::milliseconds(2);
+constexpr auto kMaximumReplayBackoff = std::chrono::milliseconds(64);
 }  // namespace
 
 ViewerRuntime::~ViewerRuntime() {
@@ -103,6 +108,7 @@ bool ViewerRuntime::retireDestination(eval::ViewerDestination destination) {
         return false;
     panelDestinations_.erase(allocated);
     results_.erase(destination);
+    replayResults_.erase(destination);
     // Scheduler state goes immediately: an in-flight request for the retired
     // destination is rejected at publication instead of reaching the mailbox.
     scheduler_.retireDestination(destination);
@@ -176,12 +182,47 @@ bool ViewerRuntime::requestRange(Document document, EvaluationRequest request, i
     return accepted;
 }
 
+std::optional<std::uint64_t> ViewerRuntime::prepareReplay(const eval::ViewerPlaybackContext& context,
+                                                          eval::ViewIntent intent, std::uint64_t id,
+                                                          eval::ViewerDestination destination,
+                                                          std::string colorConfigPath) {
+    std::optional<std::uint64_t> revision;
+    {
+        std::lock_guard lock(mutex_);
+        if (!stopping_)
+            revision = scheduler_.preparePlayback(context, std::move(intent), id, destination,
+                                                  std::chrono::steady_clock::now(), std::move(colorConfigPath));
+        // A preparation never displaces the destination's current frame or its
+        // latest-wins mailbox result: that is exactly what makes admitting
+        // frame N+1 unable to retire frame N.
+    }
+    if (revision)
+        ready_.notify_one();
+    return revision;
+}
+
+void ViewerRuntime::cancelPlayback(eval::ViewerDestination destination) {
+    {
+        std::lock_guard lock(mutex_);
+        if (!stopping_)
+            scheduler_.cancelPlayback(destination);
+        // Prepared frames of the retired window are dropped here rather than
+        // delivered late; the worker's pending retries are rejected by the same
+        // identity check when their backoff elapses.
+        replayResults_.erase(destination);
+    }
+    ready_.notify_all();
+}
+
 void ViewerRuntime::cancel(std::uint64_t id) {
     {
         std::lock_guard lock(mutex_);
         if (!stopping_)
             scheduler_.cancel(id);
         std::erase_if(results_, [this](const auto& entry) { return !scheduler_.isCurrent(entry.second.request); });
+        for (auto& entry : replayResults_) {
+            std::erase_if(entry.second, [this](const auto& pending) { return !scheduler_.isCurrent(pending.request); });
+        }
     }
     ready_.notify_all();
 }
@@ -197,6 +238,10 @@ void ViewerRuntime::cancel(std::uint64_t id, eval::ViewerDestination destination
         std::erase_if(results_, [this, destination](const auto& entry) {
             return entry.first == destination && !scheduler_.isCurrent(entry.second.request);
         });
+        if (const auto replay = replayResults_.find(destination); replay != replayResults_.end()) {
+            std::erase_if(replay->second,
+                          [this](const auto& pending) { return !scheduler_.isCurrent(pending.request); });
+        }
     }
     ready_.notify_all();
 }
@@ -219,7 +264,8 @@ ViewerRuntimeCounts ViewerRuntime::composeCountsLocked(const eval::ViewerSchedul
                                cacheCounts_.lastError,
                                cacheCounts_.diskBytes,
                                cacheCounts_.compressedHotBytes,
-                               cacheCounts_.decodedHotFrames,
+                               cacheCounts_.residentFrames,
+                               cacheCounts_.residentBytes,
                                cacheCounts_.activeFrames};
 }
 
@@ -235,12 +281,27 @@ ViewerRuntimeCounts ViewerRuntime::counts(eval::ViewerDestination destination) c
 
 std::optional<ViewerWorkResult> ViewerRuntime::takeResult(eval::ViewerDestination destination) {
     std::lock_guard lock(mutex_);
-    const auto found = results_.find(destination);
-    if (found == results_.end())
+    // The latest-wins mailbox is consumed first: a seek/edit answer is what the
+    // panel wants now, and its ordered replay backlog is obsolete beside it.
+    if (const auto found = results_.find(destination); found != results_.end()) {
+        auto result = std::move(found->second.result);
+        results_.erase(found);
+        return result;
+    }
+    const auto found = replayResults_.find(destination);
+    if (found == replayResults_.end())
         return std::nullopt;
-    auto result = std::move(found->second.result);
-    results_.erase(found);
-    return result;
+    // A prepared frame whose window has since been superseded is dropped here
+    // rather than delivered late.
+    while (!found->second.empty()) {
+        auto result = std::move(found->second.front().result);
+        const bool current = scheduler_.isCurrent(found->second.front().request);
+        found->second.pop_front();
+        if (current)
+            return result;
+    }
+    replayResults_.erase(found);
+    return std::nullopt;
 }
 
 bool ViewerRuntime::publish(ViewerWorkResult result, const Pending& pending) {
@@ -270,6 +331,44 @@ void ViewerRuntime::finishRange(const Pending& pending, bool cacheAccepted) {
     (void)scheduler_.complete(pending, cacheAccepted);
 }
 
+bool ViewerRuntime::publishReplay(ViewerWorkResult result, const Pending& pending) {
+    bool accepted = false;
+    {
+        std::lock_guard lock(mutex_);
+        // The ordered playback identity check: a frame stays current for as
+        // long as its destination's window does, so a successor never displaces
+        // it, while a seek/edit/cancel/retirement retires it here.
+        if (!stopping_ && scheduler_.complete(pending, true)) {
+            replayResults_[pending.destination].push_back(Published{pending, std::move(result)});
+            accepted = true;
+        } else if (stopping_) {
+            (void)scheduler_.complete(pending, false);
+        }
+    }
+    if (accepted)
+        emit resultReady();
+    return accepted;
+}
+
+void ViewerRuntime::keepPendingReplay(Pending pending, std::chrono::milliseconds backoff) {
+    // Bounded by the scheduler's own playback window: every entry here is one
+    // in-flight Replay unit whose retained representation is still loading, and
+    // a unit the scheduler has since superseded is dropped instead of retried.
+    if (!scheduler_.isCurrent(pending)) {
+        (void)scheduler_.complete(pending, false);
+        return;
+    }
+    const auto delay = std::min(backoff, kMaximumReplayBackoff);
+    PendingReplay entry{.request = std::move(pending),
+                        .retryAt = std::chrono::steady_clock::now() + delay,
+                        .backoff = std::min(delay * 2, kMaximumReplayBackoff)};
+    // Kept in retry-deadline order so the worker always wakes for the earliest
+    // preparation that may have become resident.
+    const auto position = std::find_if(replayPending_.begin(), replayPending_.end(),
+                                       [&](const auto& queued) { return queued.retryAt > entry.retryAt; });
+    replayPending_.insert(position, std::move(entry));
+}
+
 void ViewerRuntime::refreshColorConfig() {
     {
         const std::lock_guard lock(mutex_);
@@ -285,21 +384,50 @@ void ViewerRuntime::run(const std::filesystem::path& shaders,
     // a different request config replaces the session, never the environment.
     std::string sessionColorConfig;
     std::vector<std::uint32_t> presentationShader;
+    std::vector<std::uint32_t> replayShader;
     for (;;) {
         Pending pending;
+        std::chrono::milliseconds retryBackoff = kCacheProgressInterval;
+        bool retry = false;
         bool hasPending = false;
         bool colorRefresh = false;
         std::vector<eval::ViewerDestination> retired;
+        // Range construction is demand-driven background work, not a history
+        // of float frames waiting behind the encoder or a slow disk. Keep its
+        // next frame in the scheduler while accepted cache work owns bytes.
+        // Foreground requests/replay remain serviceable throughout this wait.
+        const bool admitRange = !session || session->cacheCounts().pendingBytes == 0;
         {
             std::unique_lock lock(mutex_);
-            ready_.wait(lock,
-                        [this] { return stopping_ || scheduler_.hasWork() || !retireQueue_.empty() || colorRefresh_; });
+            const bool waitingOnRange = !admitRange && scheduler_.hasWork();
+            const auto work = [this, admitRange, waitingOnRange] {
+                return stopping_ || scheduler_.hasWork(admitRange || !waitingOnRange) || !retireQueue_.empty() ||
+                       colorRefresh_;
+            };
+            auto wakeAt = std::chrono::steady_clock::time_point::max();
+            if (!replayPending_.empty())
+                wakeAt = replayPending_.front().retryAt;
+            if (waitingOnRange)
+                wakeAt = std::min(wakeAt, std::chrono::steady_clock::now() + kCacheProgressInterval);
+            if (wakeAt == std::chrono::steady_clock::time_point::max())
+                ready_.wait(lock, work);
+            else
+                (void)ready_.wait_until(lock, wakeAt, work);
             if (stopping_)
                 break;
             retired.swap(retireQueue_);
             colorRefresh = colorRefresh_;
             colorRefresh_ = false;
-            if (auto next = scheduler_.take()) {
+            const auto now = std::chrono::steady_clock::now();
+            if (!replayPending_.empty() && replayPending_.front().retryAt <= now) {
+                // The oldest pending preparation is due: its frame is earlier in
+                // the transport than anything newly admitted, so it goes first.
+                pending = std::move(replayPending_.front().request);
+                retryBackoff = replayPending_.front().backoff;
+                replayPending_.pop_front();
+                retry = true;
+                hasPending = true;
+            } else if (auto next = scheduler_.take(admitRange)) {
                 pending = std::move(*next);
                 hasPending = true;
             }
@@ -321,6 +449,12 @@ void ViewerRuntime::run(const std::filesystem::path& shaders,
         }
         if (!hasPending)
             continue;
+        // A preparation the scheduler has since superseded — a seek, an edit, a
+        // stop or a destination retirement — is dropped before it does any work.
+        if (retry && !scheduler_.isCurrent(pending)) {
+            (void)scheduler_.complete(pending, false);
+            continue;
+        }
         try {
             if (!session || sessionColorConfig != pending.colorConfigPath) {
                 // The project's authored config replaces the worker-owned
@@ -331,70 +465,27 @@ void ViewerRuntime::run(const std::filesystem::path& shaders,
                 // configuration can never drop a package's effects.
                 auto configured = std::make_unique<eval::ViewerSession>(*instance_, *device_, *allocator_, shaders,
                                                                         pending.colorConfigPath, contributions);
+                // Release the old cache's exclusive writer lease before the
+                // replacement opens the same directory. GUI counts must never
+                // retain the worker-owned pointer across its destruction.
+                {
+                    std::lock_guard lock(mutex_);
+                    session_ = nullptr;
+                }
+                session.reset();
                 configured->configureCache(cacheOptions_);
                 session = std::move(configured);
                 sessionColorConfig = pending.colorConfigPath;
                 std::lock_guard lock(mutex_);
                 session_ = session.get();
             }
-            if (pending.kind == eval::ViewerRequestKind::Probe) {
-                publish(SourceProbeResult{session->probeSource(*pending.document, pending.source), pending.id},
-                        pending);
-            } else if (pending.kind == eval::ViewerRequestKind::Describe) {
-                publish(ViewerTargetDescription{session->describe(*pending.document, pending.request()), pending.id},
-                        pending);
-            } else if (pending.kind == eval::ViewerRequestKind::Sample) {
-                // One on-demand working-space pixel: the same session, the same
-                // plan mechanism and the same device as a render, so a pick can
-                // never disagree with the frame beside it (issue #102).
-                const auto sample =
-                    session->sampleWorkingPixel(*pending.document, pending.request(), 10'000'000'000ULL);
-                publish(ViewerWorkingSample{sample, pending.id}, pending);
-            } else {
-                auto publicationGuard = [this, pending] { return scheduler_.isCacheCurrent(pending); };
-                eval::ViewerFrame frame;
-                if (pending.kind == eval::ViewerRequestKind::CacheRange) {
-                    // Cache frames are a concrete, coverage-stating request that
-                    // never replaces the interactive view, so they are rendered
-                    // as such (issue #98 keeps the distinct headless contract).
-                    frame = session->render(*pending.document, pending.request(), 10'000'000'000ULL, pending.id,
-                                            pending.destination, std::move(publicationGuard));
-                } else {
-                    // ONE worker job resolves the view against the current
-                    // frame's described image, states the demand from it and
-                    // executes the plan it resolved (issue #98). The Auto
-                    // hysteresis state is this destination's own, retained
-                    // across frames.
-                    frame = session->render(*pending.document, pending.intent(), resolution_[pending.destination],
-                                            10'000'000'000ULL, pending.id, pending.destination,
-                                            std::move(publicationGuard));
-                }
-                if (pending.kind == eval::ViewerRequestKind::CacheRange) {
-                    finishRange(pending, frame.cacheHit || frame.cacheQueued);
-                } else {
-                    bool current = false;
-                    {
-                        std::lock_guard lock(mutex_);
-                        current = !stopping_ && scheduler_.isCurrent(pending);
-                        if (!current)
-                            (void)scheduler_.complete(pending, false);
-                    }
-                    if (current) {
-                        if (presentationShader.empty())
-                            presentationShader = gpu::loadSpirv(shaders / "viewerPresentation.spv");
-                        // The isolation the frame's own view asked for: applied
-                        // in the presentation copy only, never in evaluation or
-                        // the cache, and never taken from another destination.
-                        auto presentation = gpu::prepareViewerPresentation(
-                            *device_, *allocator_, *presentationDevice_, *frame.image, frame.layout.color,
-                            presentationShader, frame.presentationChannel);
-                        auto result = std::make_shared<ViewerResult>(ViewerResult{
-                            std::move(presentation), frame.layout, frame.description, frame.request, pending.id,
-                            frame.revision, frame.cacheHit, pending.requestedAt, pending.destination});
-                        publish(std::shared_ptr<const ViewerResult>(std::move(result)), pending);
-                    }
-                }
-            }
+            execute(pending, *session, shaders, presentationShader, replayShader);
+        } catch (const eval::ViewerReplayPending&) {
+            // A valid retained representation for this exact demand exists but is
+            // still loading. It is not a miss: the graph is never evaluated for
+            // it, and the preparation is kept for a later retry while the worker
+            // continues with everything else.
+            keepPendingReplay(std::move(pending), retryBackoff);
         } catch (const eval::ViewUnavailable& error) {
             // The view addresses nothing the current frame carries: it has no
             // frame to publish, so the panel must not keep presenting an image
@@ -407,6 +498,10 @@ void ViewerRuntime::run(const std::filesystem::path& shaders,
                                          .arg(std::get<EvaluationRequest>(pending.demand).localTime)
                                          .arg(QString::fromUtf8(error.what())),
                                      pending.id);
+            } else if (pending.kind == eval::ViewerRequestKind::Replay) {
+                // A read-ahead frame the retained index refuses is a neighbour
+                // the transport does not walk to: it is dropped, never rendered.
+                publishReplay(ViewerReplayMiss{pending.intent().localTime, pending.id}, pending);
             } else {
                 const auto& intent = pending.intent();
                 publish(ViewerUnavailableView{error.what(), pending.id, intent.target, intent.localTime,
@@ -420,6 +515,8 @@ void ViewerRuntime::run(const std::filesystem::path& shaders,
                                          .arg(std::get<EvaluationRequest>(pending.demand).localTime)
                                          .arg(QString::fromUtf8(error.what())),
                                      pending.id);
+            } else if (pending.kind == eval::ViewerRequestKind::Replay) {
+                publishReplay(ViewerReplayMiss{pending.intent().localTime, pending.id}, pending);
             } else {
                 publish(ViewerFailure{error.what(), pending.id}, pending);
             }
@@ -428,6 +525,119 @@ void ViewerRuntime::run(const std::filesystem::path& shaders,
     }
     std::lock_guard lock(mutex_);
     session_ = nullptr;
+}
+
+void ViewerRuntime::execute(Pending& pending, eval::ViewerSession& session, const std::filesystem::path& shaders,
+                            std::vector<std::uint32_t>& presentationShader, std::vector<std::uint32_t>& replayShader) {
+    if (pending.kind == eval::ViewerRequestKind::Probe) {
+        publish(SourceProbeResult{session.probeSource(*pending.document, pending.source), pending.id}, pending);
+        return;
+    }
+    if (pending.kind == eval::ViewerRequestKind::Describe) {
+        publish(ViewerTargetDescription{session.describe(*pending.document, pending.request()), pending.id}, pending);
+        return;
+    }
+    if (pending.kind == eval::ViewerRequestKind::Sample) {
+        // One on-demand working-space pixel: the same session, the same
+        // plan mechanism and the same device as a render, so a pick can
+        // never disagree with the frame beside it (issue #102).
+        const auto sample = session.sampleWorkingPixel(*pending.document, pending.request(), 10'000'000'000ULL);
+        publish(ViewerWorkingSample{sample, pending.id}, pending);
+        return;
+    }
+    if (pending.kind == eval::ViewerRequestKind::Replay) {
+        executeReplay(pending, session, shaders, presentationShader, replayShader);
+        return;
+    }
+    auto publicationGuard = [this, pending] { return scheduler_.isCacheCurrent(pending); };
+    if (pending.kind == eval::ViewerRequestKind::CacheRange) {
+        // Cache frames are a concrete, coverage-stating request that
+        // never replaces the interactive view, so they are rendered
+        // as such (issue #98 keeps the distinct headless contract).
+        const auto frame = session.render(*pending.document, pending.request(), 10'000'000'000ULL, pending.id,
+                                          pending.destination, std::move(publicationGuard));
+        finishRange(pending, frame.cacheHit || frame.cacheQueued);
+        return;
+    }
+    // Foreground construction scope (issue #106): while it is alive the
+    // session's cache writer defers its own GPU submissions, so this frame's
+    // evaluation and its presentation construction win the shared device queue.
+    // It is a construction gate, not a device wait, and it is released on every
+    // path — including a thrown ViewerReplayPending, which leaves no live frame.
+    auto foreground = session.foregroundScope();
+    // ONE worker job resolves the view against the current
+    // frame's described image, states the demand from it and
+    // executes the plan it resolved (issue #98). The Auto
+    // hysteresis state is this destination's own, retained
+    // across frames. A known valid retained representation is served from it
+    // without evaluating the graph; a representation that is still loading
+    // throws ViewerReplayPending instead of evaluating.
+    const auto frame = session.render(*pending.document, pending.intent(), resolution_[pending.destination],
+                                      10'000'000'000ULL, pending.id, pending.destination, std::move(publicationGuard));
+    bool current = false;
+    {
+        std::lock_guard lock(mutex_);
+        current = !stopping_ && scheduler_.isCurrent(pending);
+        if (!current)
+            (void)scheduler_.complete(pending, false);
+    }
+    if (!current)
+        return;
+    auto presentation = presentFrame(frame, shaders, presentationShader, replayShader);
+    auto result = std::make_shared<ViewerResult>(ViewerResult{
+        std::move(presentation), frame.layout, frame.description, frame.request, pending.id, frame.revision,
+        frame.cacheHit, static_cast<bool>(frame.replay), pending.requestedAt, pending.destination});
+    publish(std::shared_ptr<const ViewerResult>(std::move(result)), pending);
+}
+
+void ViewerRuntime::executeReplay(const Pending& pending, eval::ViewerSession& session,
+                                  const std::filesystem::path& shaders, std::vector<std::uint32_t>& presentationShader,
+                                  std::vector<std::uint32_t>& replayShader) {
+    // Replay-only: the retained display-cache representation or nothing. The
+    // graph is never evaluated here, so a speculative neighbour can never
+    // become a render, and a loading representation keeps the preparation
+    // pending instead of substituting a live frame.
+    // The same foreground construction gate as the live path: a replay frame's
+    // presentation construction is ordered ahead of the writer's own encode and
+    // upload submissions. It never waits for anything.
+    auto foreground = session.foregroundScope();
+    // The admission-time revision travels with the unit and IS the snapshot's
+    // identity, so the retained record is validated without fingerprinting the
+    // document again on an ordinary playback tick.
+    auto frame = session.replay(pending.intent(), pending.revision, pending.destination);
+    if (!frame) {
+        publishReplay(ViewerReplayMiss{pending.intent().localTime, pending.id}, pending);
+        return;
+    }
+    auto presentation = presentFrame(*frame, shaders, presentationShader, replayShader);
+    auto result = std::make_shared<ViewerResult>(
+        ViewerResult{std::move(presentation), frame->layout, frame->description, frame->request, pending.id,
+                     frame->revision, true, true, pending.requestedAt, pending.destination});
+    publishReplay(std::shared_ptr<const ViewerResult>(std::move(result)), pending);
+}
+
+gpu::ViewerPresentation ViewerRuntime::presentFrame(const eval::ViewerFrame& frame,
+                                                    const std::filesystem::path& shaders,
+                                                    std::vector<std::uint32_t>& presentationShader,
+                                                    std::vector<std::uint32_t>& replayShader) {
+    if (frame.replay) {
+        // One direct BC7-sample-to-shared-RGBA8 pass: the compressed frame is
+        // sampled straight into the established presentation surface, with the
+        // same external-memory/semaphore handoff the live path uses. Its own
+        // module is required because a BC7 block-compressed image cannot bind
+        // to the live module's storage-image read.
+        if (replayShader.empty())
+            replayShader = gpu::loadSpirv(shaders / "viewerPresentationBc7.spv");
+        return gpu::prepareViewerPresentation(*device_, *allocator_, *presentationDevice_, *frame.replay, replayShader,
+                                              frame.presentationChannel);
+    }
+    if (presentationShader.empty())
+        presentationShader = gpu::loadSpirv(shaders / "viewerPresentation.spv");
+    // The isolation the frame's own view asked for: applied in the presentation
+    // copy only, never in evaluation or the cache, and never taken from another
+    // destination.
+    return gpu::prepareViewerPresentation(*device_, *allocator_, *presentationDevice_, *frame.image, frame.layout.color,
+                                          presentationShader, frame.presentationChannel);
 }
 
 QString ViewerRuntime::attachToWindow(QQuickWindow* window) {
@@ -505,6 +715,9 @@ void ViewerRuntime::stopWorker() {
         stopping_ = true;
         scheduler_.clear();
         results_.clear();
+        replayResults_.clear();
+        // replayPending_ is worker-owned; it is dropped after the join below,
+        // never while the worker may still be reading it.
     }
     ready_.notify_all();
     if (worker_.joinable())
@@ -517,6 +730,11 @@ void ViewerRuntime::quiesceForTeardown() {
     // then are the viewer worker and the devices torn down.
     delivery_.reset();
     stopWorker();
+    // Waiting for device idle alone does not retire completion-owned tokens.
+    // Release producer submissions while their imported consumer images and
+    // semaphores still have a valid logical device.
+    if (device_)
+        device_->submissions(device_->graphics_family()).drain();
     // Shutdown only: both execution and Qt's render loop must be stopped.
     // Qt's ordinary device-wide waits never touch the execution device.
     for (const auto* device : {device_.get(), presentationDevice_.get()}) {
@@ -535,6 +753,8 @@ void ViewerRuntime::quiesceForTeardown() {
     {
         std::lock_guard lock(mutex_);
         results_.clear();
+        replayResults_.clear();
+        replayPending_.clear();
     }
     flushValidation();
 }

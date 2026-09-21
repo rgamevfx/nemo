@@ -5,6 +5,7 @@
 #include "nemo/media/ViewingTransform.hpp"
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <utility>
 
 namespace nemo::eval {
@@ -25,26 +26,58 @@ namespace {
     return "ocio-gpu-v1:" + std::to_string(hash);
 }
 
-[[nodiscard]] std::string cacheIdentity(const ResultKey& key, const std::string& viewingIdentity,
-                                        const ViewerCacheOptions& options) {
+// Representation identity of one cached display frame (issue #106): the
+// effective content key of the viewer representation, the concrete OCIO
+// program that produced it, and the BC7 representation version. Codec,
+// profile, bitrate and chunking settings are gone with the video
+// representation; the cache stores one selected SDR display format, so there
+// is exactly one representation version to state.
+[[nodiscard]] std::string cacheIdentity(const ResultKey& key, const std::string& viewingIdentity) {
     std::string identity;
-    identity.reserve(key.canonical.size() + viewingIdentity.size() + options.encoding.codec.size() + 192);
+    identity.reserve(key.canonical.size() + viewingIdentity.size() + 128);
     appendCanonicalField(identity, "viewer-result", key.canonical);
     appendCanonicalField(identity, "ocio-program", viewingIdentity);
-    appendCanonicalField(identity, "interpretation", "bt709/limited/left/420/8bit/display-v1");
-    appendCanonicalField(identity, "codec", options.encoding.codec);
-    appendCanonicalField(identity, "gop", std::to_string(options.encoding.gopSize));
-    appendCanonicalField(identity, "bitrate", std::to_string(options.encoding.bitrateKbps));
-    appendCanonicalField(identity, "profile", options.encoding.profile);
-    appendCanonicalField(identity, "depth", std::to_string(options.encoding.bitDepth));
-    appendCanonicalField(identity, "chunk-frames", std::to_string(options.chunkFrames));
+    appendCanonicalField(identity, "representation", kViewerCacheRepresentation);
     return identity;
+}
+
+[[nodiscard]] std::string regionField(const Region& region) {
+    return std::to_string(region.x) + "," + std::to_string(region.y) + "," + std::to_string(region.width) + "," +
+           std::to_string(region.height);
+}
+
+[[nodiscard]] std::string channelField(const std::vector<std::string>& channels) {
+    std::string text;
+    for (const auto& channel : channels) {
+        text += channel;
+        text.push_back('\n');
+    }
+    return text;
 }
 
 // Primary RGB roles the presentation may isolate out of a color-managed layer.
 // Alpha is deliberately excluded: alpha is data, so it is demanded by name and
 // presented from the demanded image's RGB (issue #99).
 constexpr std::size_t kIsolatedViewRoles = 3;
+
+// The signed pixel aspect a demand is resolved against: a description always
+// carries a finite positive value, and the fallback keeps a malformed one from
+// producing a degenerate fit.
+[[nodiscard]] double demandPixelAspect(const ImageDescription& description) {
+    return description.pixelAspect > 0.0F ? static_cast<double>(description.pixelAspect) : 1.0;
+}
+
+// A declared resolution mode names its own sampling density; only Auto leaves
+// the density to the panel's retained hysteresis. The mapping belongs to the
+// resolution policy owner, which consults no state at all for a declared mode,
+// so a throwaway instance is an honest query rather than a second table.
+[[nodiscard]] int declaredSamplingScale(const ViewerResolution mode, const ImageDescription& description) {
+    if (mode == ViewerResolution::Auto)
+        return 0;
+    const ViewerResolutionPolicy stateless;
+    return stateless.resolve(mode, description.format.width, description.format.height, demandPixelAspect(description),
+                             0.0, 0.0, 1.0);
+}
 
 }  // namespace
 
@@ -73,7 +106,7 @@ ViewerSession::ViewerSession(gpu::Instance& instance, gpu::Device& device, gpu::
                              const std::filesystem::path& shaderDirectory, std::string ocioConfigPath,
                              std::vector<GpuNodeContribution> contributions)
     : instance_(instance), device_(device), allocator_(allocator), ocioConfigPath_(std::move(ocioConfigPath)),
-      replayShader_(shaderDirectory / "mediaConvert.spv"),
+      shaderDirectory_(shaderDirectory), replayShader_(shaderDirectory / "mediaConvert.spv"),
       sources_(instance, device, allocator, replayShader_, ocioConfigPath_),
       // The caller's complete inventory becomes THIS session's immutable native
       // projection (issue #37). The built-in default is the same assembly the
@@ -88,8 +121,12 @@ ViewerSession::~ViewerSession() = default;
 void ViewerSession::refreshColorConfig() {
     // Retire the retained viewing programs/LUTs and the source session's color
     // generation. Nothing polls: this is the sole boundary, called by the owner
-    // that replaced the project or deliberately reloaded the configuration.
+    // that replaced the project or deliberately reloaded the configuration. The
+    // validated frame records were resolved under the retired configuration, so
+    // they go with it: a record may only ever describe the color state it was
+    // produced with.
     viewing_.clear();
+    forgetRecords();
     sources_.refreshColorConfig();
 }
 
@@ -150,7 +187,10 @@ void ViewerSession::configureCache(const ViewerCacheOptions& options) {
     std::scoped_lock stateLocks(cacheMutex_, freshnessMutex_);
     if (cache_)
         throw std::logic_error("viewer cache is already configured");
-    auto cache = std::make_unique<ViewerCache>(instance_, device_, allocator_, replayShader_);
+    // No record can outlive the cache it was keyed against: an identity is only
+    // meaningful for the storage that produced it.
+    forgetRecords();
+    auto cache = std::make_unique<ViewerCache>(device_, allocator_, shaderDirectory_);
     cache->configure(options);
     for (const auto& [destination, generation] : latestGenerationByDestination_) {
         const auto revision = latestRevisionByDestination_.find(destination);
@@ -201,10 +241,241 @@ void ViewerSession::supersedeCache(std::uint64_t revision, std::uint64_t generat
         cache_->supersede(revision, generation, destination);
 }
 
+ViewerCache::ForegroundScope ViewerSession::foregroundScope() {
+    // No configured cache means no asynchronous writer to gate, so the scope is
+    // empty and holding it is a no-op. The gate itself belongs to the cache
+    // owner: it holds whatever weak state the writer needs, so a scope that
+    // outlives the cache releases nothing rather than touching freed state.
+    return cache_ ? cache_->foregroundScope() : ViewerCache::ForegroundScope{};
+}
+
 void ViewerSession::retireDestination(ViewerDestination destination) {
     std::lock_guard freshnessLock(freshnessMutex_);
     latestRevisionByDestination_.erase(destination);
     latestGenerationByDestination_.erase(destination);
+}
+
+namespace {
+
+// Exact canonical form of a demand's fractional geometry: the value's own bits,
+// the pattern the reuse keys already use for canonical numbers. A decimal
+// rendering would lose precision and could alias two distinct views.
+[[nodiscard]] std::string exactNumberField(const double value) {
+    return std::to_string(std::bit_cast<std::uint64_t>(value));
+}
+
+}  // namespace
+
+std::string ViewerSession::intentRecordKey(ViewerDestination destination, const ViewIntent& intent) {
+    std::string key;
+    appendCanonicalField(key, "view-intent", std::to_string(static_cast<std::uint32_t>(destination)));
+    appendCanonicalField(key, "network", std::to_string(intent.network));
+    appendCanonicalField(key, "target", std::to_string(intent.target));
+    appendCanonicalField(key, "local-time", std::to_string(intent.localTime));
+    appendCanonicalField(key, "resolution", viewerResolutionName(intent.mode));
+    appendCanonicalField(key, "coverage", intent.forceFullFrame ? "whole-frame" : "view");
+    appendCanonicalField(key, "zoom", exactNumberField(intent.zoom));
+    appendCanonicalField(key, "pan-x", exactNumberField(intent.panX));
+    appendCanonicalField(key, "pan-y", exactNumberField(intent.panY));
+    appendCanonicalField(key, "viewport-width", exactNumberField(intent.viewportWidth));
+    appendCanonicalField(key, "viewport-height", exactNumberField(intent.viewportHeight));
+    appendCanonicalField(key, "layer", intent.layer);
+    appendCanonicalField(key, "channel", intent.channel);
+    return key;
+}
+
+std::string ViewerSession::requestRecordKey(ViewerDestination destination, const EvaluationRequest& request) {
+    std::string key;
+    appendCanonicalField(key, "view-request", std::to_string(static_cast<std::uint32_t>(destination)));
+    appendCanonicalField(key, "network", std::to_string(request.network));
+    appendCanonicalField(key, "output", std::to_string(request.output));
+    appendCanonicalField(key, "local-time", std::to_string(request.localTime));
+    appendCanonicalField(key, "region", regionField(request.region));
+    appendCanonicalField(key, "domain", std::to_string(request.fullWidth) + "x" + std::to_string(request.fullHeight));
+    appendCanonicalField(key, "scale", std::to_string(request.samplingScale));
+    appendCanonicalField(key, "quality", qualityName(request.quality));
+    appendCanonicalField(key, "channels", channelField(request.channels));
+    return key;
+}
+
+std::string ViewerSession::frameRecordKey(const EvaluationRequest& request) {
+    std::string key;
+    appendCanonicalField(key, "frame", std::to_string(request.network));
+    appendCanonicalField(key, "target", std::to_string(request.output));
+    appendCanonicalField(key, "local-time", std::to_string(request.localTime));
+    return key;
+}
+
+std::optional<ViewerSession::FrameMatch> ViewerSession::frameRecordForIntent(const ViewIntent& intent,
+                                                                             const std::uint64_t revision,
+                                                                             const std::string& colorIdentity) const {
+    EvaluationRequest identity;
+    identity.network = intent.network;
+    identity.output = intent.target;
+    identity.localTime = intent.localTime;
+    const auto known = findRecord(frameRecordKey(identity), revision, colorIdentity);
+    if (!known)
+        return std::nullopt;
+    const FrameRecord& record = **known;
+    // A declared mode names its own density, so a representation at another one
+    // is not this view's representation; only Auto leaves the density to the
+    // validated record.
+    const int declared = declaredSamplingScale(intent.mode, record.description);
+    if (declared != 0 && declared != record.request.samplingScale)
+        return std::nullopt;
+    ResolvedView view;
+    try {
+        view = resolveViewDemand(intent, record.description, record.request.samplingScale);
+    } catch (const ViewUnavailable&) {
+        return std::nullopt;
+    }
+    // An empty channel demand means every channel the image names, so it is
+    // compared as exactly that set: a concrete request that named no channels
+    // and the view that names this image's channels are the same demand.
+    EvaluationRequest recorded = record.request;
+    if (recorded.channels.empty())
+        recorded.channels = record.description.channels;
+    if (view.request != recorded)
+        return std::nullopt;
+    return FrameMatch{*known, view.presentationChannel};
+}
+
+std::optional<std::shared_ptr<const ViewerSession::FrameRecord>>
+ViewerSession::findRecord(const std::string& key, std::uint64_t revision, const std::string& colorIdentity) const {
+    std::lock_guard lock(recordsMutex_);
+    const auto found = records_.find(key);
+    // A record is only ever the answer for the snapshot it was resolved
+    // against: an edited document and a reloaded colour configuration both
+    // invalidate the resolution it holds, while a playback tick that only
+    // advances local time leaves it valid because local time is part of the key.
+    if (found == records_.end() || found->second->documentRevision != revision ||
+        found->second->colorIdentity != colorIdentity)
+        return std::nullopt;
+    return found->second;
+}
+
+void ViewerSession::record(const std::string& key, FrameRecord entry) {
+    auto stored = std::make_shared<const FrameRecord>(std::move(entry));
+    std::lock_guard lock(recordsMutex_);
+    // A re-recorded demand replaces its record in place; the bounded index only
+    // ever drops the oldest record, which costs one re-resolution of a demand
+    // nobody is playing.
+    const auto existing = records_.find(key);
+    if (existing != records_.end()) {
+        existing->second = std::move(stored);
+        return;
+    }
+    records_.emplace(key, std::move(stored));
+    recordOrder_.push_back(key);
+    while (recordOrder_.size() > kMaxFrameRecords) {
+        records_.erase(recordOrder_.front());
+        recordOrder_.pop_front();
+    }
+}
+
+void ViewerSession::forgetRecords() {
+    std::lock_guard lock(recordsMutex_);
+    records_.clear();
+    recordOrder_.clear();
+}
+
+ViewerFrame ViewerSession::replayFrame(const ViewerCacheResult& result, const EvaluationRequest& request,
+                                       const ImageDescription& description, gpu::ViewerChannel channel,
+                                       std::uint64_t requestId, std::uint64_t revision) {
+    ViewerFrame frame;
+    // Pixels may be shared by equivalent nodes. Rebind their representation to
+    // this consumer's validated demand, never the original producer's target.
+    // The record already owns its description; replay needs no graph query.
+    frame.replay = result.image;
+    frame.layout = result.layout;
+    frame.description = description;
+    frame.request = request;
+    frame.revision = revision;
+    frame.requestId = requestId;
+    frame.cacheHit = true;
+    frame.presentationChannel = channel;
+    return frame;
+}
+
+std::optional<ViewerFrame> ViewerSession::serveRecorded(const FrameRecord& record, const RequestTicket& ticket,
+                                                        const gpu::ViewerChannel presentationChannel) {
+    if (!cache_ || record.cacheIdentity.empty())
+        return std::nullopt;
+    const ViewerCacheLookup lookup = cache_->lookup(record.cacheIdentity);
+    // A validated representation that is still preparing is NOT a miss and
+    // never becomes one: the caller retries instead of rendering the graph.
+    if (lookup.state == ViewerCacheState::Loading) {
+        throw ViewerReplayPending(record.cacheIdentity,
+                                  "viewer replay for this frame is still loading; retry instead of re-rendering");
+    }
+    if (lookup.state != ViewerCacheState::Ready || !lookup.frame)
+        return std::nullopt;
+    return replayFrame(*lookup.frame, record.request, record.description, presentationChannel, ticket.requestId,
+                       ticket.revision);
+}
+
+ViewerSession::RequestTicket ViewerSession::beginRequest(const Document& document, std::uint64_t generation,
+                                                         ViewerDestination destination) {
+    RequestTicket ticket;
+    ticket.requestId = nextRequestId_++;
+    ticket.revision = document.stateRevision();
+    {
+        std::lock_guard lock(freshnessMutex_);
+        auto& currentGeneration = generationForLocked(destination);
+        if (generation == 0)
+            generation = currentGeneration + 1;
+        if (generation >= currentGeneration) {
+            latestRevisionByDestination_[destination] = ticket.revision;
+            currentGeneration = generation;
+        }
+        ticket.generation = generation;
+    }
+    if (cache_)
+        cache_->supersede(ticket.revision, generation, destination);
+    return ticket;
+}
+
+std::optional<ViewerFrame> ViewerSession::replay(const ViewIntent& intent, const std::uint64_t snapshotRevision,
+                                                 ViewerDestination destination) {
+    // Read-only: the caller's snapshot revision and the colour configuration
+    // decide whether this session still knows what the demand resolved to, and
+    // the cache alone decides whether its representation can be served yet. The
+    // document is never fingerprinted here, so a playback tick costs no document
+    // walk, and the served frame carries exactly the revision the caller
+    // submitted. A replay call is not a request: it never advances a
+    // destination's freshness, never supersedes the cache watermark and never
+    // takes a generation.
+    RequestTicket ticket;
+    ticket.requestId = nextRequestId_++;
+    ticket.revision = snapshotRevision;
+    const std::string colorIdentity = sources_.colorConfigIdentity();
+    if (const auto known = findRecord(intentRecordKey(destination, intent), ticket.revision, colorIdentity)) {
+        if (const std::optional<ViewerFrame> frame = serveRecorded(**known, ticket, (*known)->presentationChannel))
+            return frame;
+    }
+    // The frame's own record, when the view asks for exactly what it holds: a
+    // frame filled through an explicitly requested cache range is replay-ready
+    // for the equivalent view without describing or planning anything. A view
+    // this frame does not satisfy stays a miss, so a neighbour is never filled
+    // by a render.
+    if (const auto frameMatch = frameRecordForIntent(intent, ticket.revision, colorIdentity)) {
+        if (const std::optional<ViewerFrame> frame =
+                serveRecorded(*frameMatch->record, ticket, frameMatch->presentationChannel))
+            return frame;
+    }
+    return std::nullopt;
+}
+
+std::optional<ViewerFrame> ViewerSession::replay(const EvaluationRequest& request, const std::uint64_t snapshotRevision,
+                                                 ViewerDestination destination) {
+    const auto known = findRecord(requestRecordKey(destination, canonicalizeRequest(request)), snapshotRevision,
+                                  sources_.colorConfigIdentity());
+    if (!known)
+        return std::nullopt;
+    RequestTicket ticket;
+    ticket.requestId = nextRequestId_++;
+    ticket.revision = snapshotRevision;
+    return serveRecorded(**known, ticket, (*known)->presentationChannel);
 }
 
 ViewerSession::ViewingState& ViewerSession::viewingStateFor(const ColorPolicy& policy) {
@@ -219,8 +490,7 @@ ViewerSession::ViewingState& ViewerSession::viewingStateFor(const ColorPolicy& p
     return viewing_.emplace(key, ViewingState{std::move(program), std::move(identity), {}}).first->second;
 }
 
-ResolvedView resolveViewIntent(const ViewIntent& intent, const ImageDescription& description,
-                               ViewerResolutionPolicy& resolution) {
+ResolvedView resolveViewDemand(const ViewIntent& intent, const ImageDescription& description, const int samplingScale) {
     ResolvedView view;
     EvaluationRequest& request = view.request;
     request.network = intent.network;
@@ -254,11 +524,11 @@ ResolvedView resolveViewIntent(const ViewIntent& intent, const ImageDescription&
     // One identified primary RGB channel of a color-managed layer is isolated
     // in the presentation copy only: the evaluated frame still carries every
     // channel of the layer, so isolating a channel never changes what the graph
-    // produced. ALPHA is not color: it is demanded by name like any other data
-    // channel, so the displayed matte travels in the RGB of the evaluated image
-    // instead of in a fourth component (issue #99) — the compressed replay
-    // stores YUV and cannot carry one. Any other unmatched name is demanded by
-    // its exact name as well.
+    // produced. ALPHA is deliberately not a display isolation: it is not color,
+    // and a stored matte belongs to the image's data, so alpha is demanded by
+    // name like any other data channel and the displayed matte travels in the
+    // RGB of the evaluated image instead of in a fourth component (issue #99).
+    // Any other unmatched name is demanded by its exact name as well.
     if (selected != kViewCompositeChannel) {
         bool isolated = false;
         if (resolveViewerProjection({}, request.channels).applyViewingTransform) {
@@ -276,9 +546,8 @@ ResolvedView resolveViewIntent(const ViewIntent& intent, const ImageDescription&
             request.channels.assign(1, selected);
     }
 
-    const double pixelAspect = description.pixelAspect > 0.0F ? static_cast<double>(description.pixelAspect) : 1.0;
-    request.samplingScale = resolution.resolve(intent.mode, width, height, pixelAspect, intent.viewportWidth,
-                                               intent.viewportHeight, intent.zoom);
+    const double pixelAspect = demandPixelAspect(description);
+    request.samplingScale = samplingScale;
     // Coverage: whole-frame mode names the same domain at every pan and zoom,
     // otherwise the region this view actually shows. Sampling density and the
     // display transform are retained either way; a viewport the panel has not
@@ -310,10 +579,42 @@ ResolvedView resolveViewIntent(const ViewIntent& intent, const ImageDescription&
     return view;
 }
 
+ResolvedView resolveViewIntent(const ViewIntent& intent, const ImageDescription& description,
+                               ViewerResolutionPolicy& resolution) {
+    // The panel's retained hysteresis decides the density; everything else about
+    // the demand is the shared arithmetic above.
+    const int samplingScale =
+        resolution.resolve(intent.mode, description.format.width, description.format.height,
+                           demandPixelAspect(description), intent.viewportWidth, intent.viewportHeight, intent.zoom);
+    return resolveViewDemand(intent, description, samplingScale);
+}
+
 ViewerFrame ViewerSession::render(const Document& document, const ViewIntent& intent,
                                   ViewerResolutionPolicy& resolution, std::uint64_t timeout_ns,
                                   std::uint64_t generation, ViewerDestination destination,
                                   CachePublicationGuard publicationGuard) {
+    const std::string colorIdentity = sources_.colorConfigIdentity();
+    const std::string recordKey = intentRecordKey(destination, intent);
+    const RequestTicket ticket = beginRequest(document, generation, destination);
+    // Known valid same-snapshot hit (issue #106): the demand's own record first
+    // (the exact view intent), then the FRAME's own record when the view asks
+    // for exactly what that frame already holds — the case an explicitly
+    // populated cache range creates, whose frames were visited as concrete
+    // requests. Either way nothing is described, planned or executed: the
+    // resolved representation is looked up directly, which is what lets an
+    // ordinary playback tick reach a compressed frame without touching the
+    // graph. A recorded demand is authoritative for its view: returning to a
+    // frame does not refine it just because another frame moved the Auto
+    // hysteresis.
+    if (const auto known = findRecord(recordKey, ticket.revision, colorIdentity)) {
+        if (const std::optional<ViewerFrame> frame = serveRecorded(**known, ticket, (*known)->presentationChannel))
+            return *frame;
+    }
+    if (const auto frameMatch = frameRecordForIntent(intent, ticket.revision, colorIdentity)) {
+        if (const std::optional<ViewerFrame> frame =
+                serveRecorded(*frameMatch->record, ticket, frameMatch->presentationChannel))
+            return *frame;
+    }
     // Description first, on the same worker job: a minimal request that
     // identifies the target and its local time describes the CURRENT frame's
     // authored output without acquiring a pixel or touching the device, so
@@ -332,44 +633,47 @@ ViewerFrame ViewerSession::render(const Document& document, const ViewIntent& in
     const ResolvedView view = resolveViewIntent(intent, described.nodes.at(outputKey).description, resolution);
     // The description this demand was stated against is the plan the key and the
     // execution consume, so one worker job resolves the authored state once.
-    return renderResolved(document, view.request, std::move(described), timeout_ns, generation, destination,
-                          std::move(publicationGuard), view.presentationChannel);
+    return renderResolved(document, view.request, std::move(described), std::move(recordKey), timeout_ns, ticket,
+                          destination, std::move(publicationGuard), view.presentationChannel);
 }
 
 ViewerFrame ViewerSession::render(const Document& document, const EvaluationRequest& request, std::uint64_t timeout_ns,
                                   std::uint64_t generation, ViewerDestination destination,
                                   CachePublicationGuard publicationGuard) {
-    return renderResolved(document, request, std::nullopt, timeout_ns, generation, destination,
+    // The concrete demand is validated before anything else — including the
+    // record index — so a malformed request fails with the same precise reason
+    // the execution path reports, and a rejected demand can never be looked up.
+    validateRequest(document, request);
+    const std::string colorIdentity = sources_.colorConfigIdentity();
+    // The canonical demand IS this path's identity, so the record index is keyed
+    // by it and the same request in the same snapshot is the same
+    // representation — never a naked local time or a session-wide stamp.
+    const std::string recordKey = requestRecordKey(destination, canonicalizeRequest(request));
+    const RequestTicket ticket = beginRequest(document, generation, destination);
+    if (const auto known = findRecord(recordKey, ticket.revision, colorIdentity)) {
+        if (const std::optional<ViewerFrame> frame = serveRecorded(**known, ticket, (*known)->presentationChannel))
+            return *frame;
+    }
+    return renderResolved(document, request, std::nullopt, std::move(recordKey), timeout_ns, ticket, destination,
                           std::move(publicationGuard), gpu::ViewerChannel::RGBA);
 }
 
 ViewerFrame ViewerSession::renderResolved(const Document& document, const EvaluationRequest& inputRequest,
-                                          std::optional<ImageDescriptionPlan> described, std::uint64_t timeout_ns,
-                                          std::uint64_t generation, ViewerDestination destination,
+                                          std::optional<ImageDescriptionPlan> described, std::string recordKey,
+                                          std::uint64_t timeout_ns, RequestTicket ticket, ViewerDestination destination,
                                           CachePublicationGuard publicationGuard,
                                           gpu::ViewerChannel presentationChannel) {
-    // Worker-only contract; validate here so a malformed request fails on
-    // the caller's thread with a precise reason before any GPU work.
+    // Worker-only contract check for both entry points; a malformed request
+    // fails on the caller's thread with a precise reason before any GPU work.
+    // The concrete-request entry point has already made this check (before it
+    // consulted the record index) and the view-intent entry point is checked
+    // here, on the request it resolved from the current frame's description.
     validateRequest(document, inputRequest);
     const EvaluationRequest request = canonicalizeRequest(inputRequest);
-    const auto requestId = nextRequestId_++;
-    const auto revision = document.stateRevision();
-    {
-        std::lock_guard lock(freshnessMutex_);
-        auto& currentGeneration = generationForLocked(destination);
-        if (generation == 0)
-            generation = currentGeneration + 1;
-        if (generation >= currentGeneration) {
-            latestRevisionByDestination_[destination] = revision;
-            currentGeneration = generation;
-        }
-    }
+    const auto requestId = ticket.requestId;
+    const auto revision = ticket.revision;
 
     std::optional<std::string> identity;
-    ImageLayout expected;
-    expected.width = scaledDimension(request.region.width, request.samplingScale);
-    expected.height = scaledDimension(request.region.height, request.samplingScale);
-    expected.color = ColorInterpretation::DisplayReferred;
     // ONE resolved plan per render (issue #88): the cache key and the execution
     // consume the same resolved nodes, descriptions and source requests, so a
     // media header or authored-state change can never make the key describe
@@ -391,32 +695,48 @@ ViewerFrame ViewerSession::renderResolved(const Document& document, const Evalua
         "named-projection-v2/" + (viewing ? viewing->identity : std::string{"data-passthrough-v1"});
 
     if (cache_) {
-        cache_->supersede(revision, generation, destination);
         // The same described plan the render path consumes (issue #88): the
         // lookup keys the authored target instead of decoding media or guessing
         // a canvas domain.
         const ResultKey key = queryViewerResultKey(document, request, effects_, colorIdentity, &sources_, &plan);
-        identity = cacheIdentity(key, appliedViewing, cache_->optionsForIdentity());
-        if (auto hit = cache_->lookup(*identity, expected, timeout_ns)) {
-            ViewerFrame frame;
-            frame.image = std::move(hit->image);
-            frame.layout = hit->layout;
-            frame.request = request;
-            frame.description = plan.images.nodes
-                                    .at(EvaluationNodeId{request.network, kInvalidNetworkInstance, request.output,
-                                                         kEvaluationWholeNode})
-                                    .description;
-            frame.revision = revision;
-            frame.requestId = requestId;
-            frame.cacheHit = true;
-            frame.presentationChannel = presentationChannel;
-            return frame;
+        identity = cacheIdentity(key, appliedViewing);
+        // The demand is resolved: its request and representation identity are
+        // recorded before the lookup, so the next tick for it — and a replay
+        // call from the playback window — resolves nothing at all (the frame's
+        // real description travels with the cache record itself). The record is
+        // validated by the snapshot and colour stamps it carries, never by a
+        // naked frame number.
+        FrameRecord entry;
+        entry.request = request;
+        entry.description = description;
+        entry.cacheIdentity = *identity;
+        entry.documentRevision = revision;
+        entry.colorIdentity = colorIdentity;
+        entry.presentationChannel = presentationChannel;
+        // The demand's own key (the view intent or the concrete request it was
+        // asked as) and the FRAME IDENTITY key, which both render paths share: a
+        // frame filled through an explicit cache range is therefore already
+        // replay-ready for the equivalent view without planning it again.
+        record(recordKey, entry);
+        record(frameRecordKey(request), std::move(entry));
+        const ViewerCacheLookup lookup = cache_->lookup(*identity);
+        if (lookup.state == ViewerCacheState::Loading) {
+            // Not a miss: a validated representation is preparing. The caller
+            // waits for the preparation it already has instead of rendering the
+            // graph a second time.
+            throw ViewerReplayPending(*identity,
+                                      "viewer replay for this frame is still loading; retry instead of re-rendering");
         }
+        if (lookup.state == ViewerCacheState::Ready && lookup.frame)
+            return replayFrame(*lookup.frame, request, description, presentationChannel, requestId, revision);
+        // Missing, Failed or Evicted: a genuine miss for THIS representation, so
+        // the live path below produces it and hands the display frame to the
+        // asynchronous cache again.
     }
 
     // Shared dependency plan: scene-linear reuse under the evaluator's own
-    // ticket; decoded frames flow through SourceSession. Compression is not
-    // on this path, so the live frame is returned without waiting for it.
+    // ticket; decoded frames flow through SourceSession. Cache preparation is
+    // not on this path, so the live frame is returned without waiting for it.
     const auto evaluation = evaluateGpu(document, request, effects_, device_, allocator_, timeout_ns, &reuse_,
                                         &sources_, colorIdentity, &plan);
 
@@ -489,6 +809,9 @@ ViewerFrame ViewerSession::renderResolved(const Document& document, const Evalua
         image = std::make_shared<gpu::Image>(std::move(viewed->image));
     }
     ViewerFrame frame;
+    // The LIVE representation: an executed, display-referred float image. This
+    // frame is not a replay, so `replay` stays empty and the consumer samples
+    // the float image as it always has.
     frame.image = image;
     frame.layout = composition->layout;
     // The displayed representation is the RGBA projection of the composition's
@@ -509,17 +832,19 @@ ViewerFrame ViewerSession::renderResolved(const Document& document, const Evalua
     frame.presentationChannel = presentationChannel;
 
     if (identity && (!publicationGuard || publicationGuard())) {
-        // Chunk grouping is a storage concern, not a synthetic evaluation
-        // request. Each frame keeps its full effective identity in the index.
-        auto chunkGroupKey =
-            appliedViewing + "/" + std::to_string(frame.layout.width) + "x" + std::to_string(frame.layout.height);
-        frame.cacheQueued = cache_->enqueue(ViewerCachePublication{.identity = std::move(*identity),
-                                                                   .chunkGroupKey = std::move(chunkGroupKey),
+        // The publication carries the frame's real description and request
+        // alongside the live display image: a replay hit then returns exactly
+        // what the frame meant when it was produced, without a description
+        // round trip. Storage identity is the one key the viewer looked up.
+        frame.cacheQueued = cache_->enqueue(ViewerCachePublication{.identity = *identity,
+                                                                   .viewingIdentity = appliedViewing,
                                                                    .localTime = request.localTime,
                                                                    .revision = revision,
-                                                                   .generation = generation,
-                                                                   .image = image,
+                                                                   .generation = ticket.generation,
+                                                                   .image = frame.image,
                                                                    .layout = frame.layout,
+                                                                   .description = frame.description,
+                                                                   .request = request,
                                                                    .destination = destination,
                                                                    .publicationGuard = std::move(publicationGuard)});
     }

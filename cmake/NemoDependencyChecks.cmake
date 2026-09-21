@@ -51,7 +51,7 @@ function(nemo_check_dependency_direction)
                         set(_nemo_forbidden TRUE)
                     elseif(_nemo_root STREQUAL "nemo_core" OR _nemo_root STREQUAL "nemo_extensions")
                         if(_nemo_dependency MATCHES
-                           "^(nemo_eval|nemo::eval|nemo_gpu|nemo::gpu|nemo_media|nemo::media|nemo_extensions_gpu|nemo::extensions_gpu|nemo::gpu_viewerinterop|nemo_openfx|nemo::openfx|Vulkan::.*|GPUOpen::.*|glslang::.*|SPIRV::.*|OpenFX::.*|PkgConfig::LIBAV)$")
+                           "^(nemo_eval|nemo::eval|nemo_gpu|nemo::gpu|nemo_media|nemo::media|nemo_extensions_gpu|nemo::extensions_gpu|nemo_openfx|nemo::openfx|Vulkan::.*|GPUOpen::.*|glslang::.*|SPIRV::.*|OpenFX::.*|PkgConfig::LIBAV)$")
                             set(_nemo_forbidden TRUE)
                         elseif(_nemo_root STREQUAL "nemo_core" AND _nemo_dependency MATCHES
                                "^(nemo_core|nemo::core|nemo_extensions|nemo::extensions)$")

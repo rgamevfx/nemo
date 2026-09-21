@@ -1,6 +1,6 @@
 # ADR-0004: GPU-first compositing and display-referred viewer caching
 
-- Status: accepted
+- Status: accepted; viewer video-storage/codec-selection decision superseded by #106 (2026-09-21)
 - Date: 2026-09-06
 - Specification: revision 2.3, sections 8, 10.3–10.4, and 11
 
@@ -8,7 +8,12 @@
 
 Interactive compositing and fast composition-cache construction are the primary performance goals. A CPU reference evaluator and shader-compilation/bootstrap milestones do not prove a GPU image path. Conversely, keeping 100–200 half-float frames in VRAM solely for playback consumes working memory needed for effects. Video compression is useful for playback storage but is not a general representation for scene-linear float intermediates, alpha, or named VFX channels.
 
-## Decision
+## Original decision
+
+The video-storage and codec-selection paragraphs below record the original
+decision, not the current cache requirement. The #106 revision below replaces
+those details; scene-linear separation, requested-only evaluation, resolution,
+validity and ownership rules remain in force.
 
 Keep the Vulkan/Slang stack from ADR-0001 and prove real GPU image execution early: decode → native effect → GPU OCIO viewing transform → viewer, followed by compressed-cache encoding and replay. CPU implementations remain correctness references and supported media/plugin paths; CPU pixel buffers must not define the universal evaluation interface. OpenFX CPU/OpenGL compatibility and graph/timeline integration remain mandatory gates, not prerequisites that defer native GPU proof.
 
@@ -21,6 +26,46 @@ Display requested results immediately and cache current, reusable representation
 Effective dependencies determine validity; request revision/identity prevents stale publication. Relevant source, graph, time, and viewing changes invalidate affected representations. Viewing-transform changes preserve upstream scene-linear reuse. Resolution/region/channel changes can select another representation without deleting valid siblings. Eviction removes valid residency under budget pressure; it is not invalidation. Settings expose disk location, disk/RAM/VRAM budgets, and cache clearing. Account for in-flight resources, effects, decoder surfaces, and presentation as well as retained cache data.
 
 Validate NVIDIA first without making it a product requirement. NVENC and NVDEC are encoder/decoder engines, not codecs; hardware capabilities and Vulkan interoperability must be measured behind the Media/GPU interfaces. HEVC remains a candidate. Choose codec/profile, bit depth, bitrate, independently decodable chunk sizes, and default budgets from evidence rather than committing them here.
+
+## BC7 viewer-cache revision (#106, 2026-09-21)
+
+The owner selected one SDR display-cache representation: independent BC7 RGBA
+frames, produced by Vulkan compute, with no codec-selection experiment or
+compatibility obligation. The former Rec.709 4:2:0 video/chunk requirement and
+NVENC/HEVC selection work are superseded, not retained as fallback paths.
+Source video decoding and full-quality delivery keep their real media owners.
+
+Store the already viewing-transformed samples in `VK_FORMAT_BC7_UNORM_BLOCK`,
+not an sRGB-sampling format. Preserve alpha and explicit viewing/config identity,
+logical raster, signed coverage, sampling lattice and pixel aspect. Edge blocks
+are deterministically padded without exposing padding in the logical image.
+BC7 is lossy display data, never a scene-linear input, accurate picker source or
+export source. No HDR-display guarantee is added.
+
+The existing `ViewerCache` owns bounded indexed pack storage, compressed RAM/GPU
+residency and asynchronous readiness. GPU compute writes blocks into buffers;
+transfer copies make sampleable BC7 images without requiring compressed storage
+images. Only compressed blocks cross the host for persistence or disk replay.
+In-memory completion and durable publication are separate. Invalid/truncated
+records are misses, but a valid loading record coalesces instead of rerendering.
+
+`ViewerSession` retains validated per-frame descriptions and identities so known
+hits bypass graph description/planning as well as execution. `ViewerScheduler`
+and its runtime distinguish ordered playback preparation from latest-wins
+interaction. Read-ahead visits cached entries only. Actual allocation admission,
+working-set reservation and eligible eviction extend the existing allocator;
+completion-retained ownership protects encoding, uploads and presentation.
+
+Replay samples BC7 directly into the established shared RGBA8 surface. Separate
+execution and Qt logical devices, external-memory ownership and semaphore
+ordering remain mandatory; the compressed texture itself is not shared with Qt.
+Unsupported BC7 devices report cache unavailability while live rendering remains
+available. The cache namespace is disposable and versioned; there is no MP4
+reader/converter/migration. Source, project and export files are never reclaimed.
+
+Native 200-frame 1080p24 forward/reverse playback and pixel/lifetime checks are
+functional acceptance under #106, not a codec comparison or general performance
+claim. Windows execution remains unverified in the current Linux work window.
 
 ## Considered options
 
@@ -85,8 +130,11 @@ overrides, and explicit media revision; reload advances that revision.
 Source interpretation remains the Media module's responsibility. Container
 pixel aspect feeds viewer fit and Auto selection. Source uploads on the
 software decode path are disclosed; effects, OCIO, and presentation stay
-device-resident. Presentation quantization targets RGBA8 UNORM and
-premultiplies alpha for Qt; it does not apply another viewing transform.
+device-resident. Presentation quantization targets RGBA8 UNORM. Issue #99
+supersedes the original alpha-composited surface: composite and isolated primary
+RGB views present opaque RGB, while alpha is viewed explicitly as data. BC7
+retains the image alpha without changing that established presentation behavior;
+neither live nor replay presentation applies another viewing transform.
 
 Issue #88 separates the described logical format/PAR and signed data bounds
 from full-resolution demand, delivered raster coverage and sampling density.

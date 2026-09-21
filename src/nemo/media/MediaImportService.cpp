@@ -26,8 +26,8 @@ namespace nemo::media {
 
 namespace {
 
-// Mirrors ViewerReferenceDecoder's declared bound so a preview request can
-// never ask for an unbounded allocation.
+// The preview bound the decoder also declares, so a preview request can never
+// ask for an unbounded allocation.
 constexpr int kMaxThumbnailDimension = 8192;
 
 // Internal control-flow failure: converted to `result.error`, never thrown

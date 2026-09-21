@@ -365,13 +365,14 @@ void SettingsController::pollUsage() {
     const auto counts = runtime_.counts();
     const QString status =
         QStringLiteral(
-            "Currently effective: %1\nDisk budget: %2 MiB\nIndexed viewer-cache disk usage: %3 MiB\nCompressed RAM hot "
-            "set: %4 MiB\nDecoded GPU hot set: %5 frames\nActive cache frames: %6%7%8")
+            "Currently effective: %1\nDisk budget: %2 MiB\nViewer-cache disk usage: %3 MiB\nCompressed RAM hot "
+            "set: %4 MiB\nBC7 GPU hot set: %5 MiB (%6 frames)\nActive cache frames: %7%8%9")
             .arg(pathText(effectiveCache_.directory))
             .arg(effectiveCache_.maxDiskBytes / (1024ULL * 1024ULL))
             .arg(static_cast<double>(counts.cacheDiskBytes) / (1024.0 * 1024.0), 0, 'f', 2)
             .arg(static_cast<double>(counts.cacheCompressedRamBytes) / (1024.0 * 1024.0), 0, 'f', 2)
-            .arg(counts.cacheDecodedHotFrames)
+            .arg(static_cast<double>(counts.cacheResidentBytes) / (1024.0 * 1024.0), 0, 'f', 2)
+            .arg(counts.cacheResidentFrames)
             .arg(counts.cacheActiveFrames)
             .arg(cacheDirectoryOverride_ ? QStringLiteral("\nDeveloper --viewer-cache-dir override is active.")
                                          : QString())

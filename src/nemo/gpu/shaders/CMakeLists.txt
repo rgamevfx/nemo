@@ -12,6 +12,8 @@ nemo_add_slang_shaders(nemo_shaders ALL
         passthrough.slang
         mediaConvert.slang
         viewerPresentation.slang
+        bc7Encode.slang
+        viewerPresentationBc7.slang
         ../../nodes/testpattern/testpattern.slang
         ../../nodes/constcolor/constcolor.slang
         ../../nodes/merge/merge.slang
@@ -32,6 +34,7 @@ nemo_add_slang_shaders(nemo_shaders ALL
     # #85); the compiled SPIR-V must be rebuilt when that contract changes.
     DEPENDS
         "${CMAKE_CURRENT_SOURCE_DIR}/../../nodes/GpuGeometry.slang"
+        "${CMAKE_CURRENT_SOURCE_DIR}/ViewerChannels.slang"
 )
 
 if(DEFINED NEMO_SLANG_SPV_DIR)

@@ -26,6 +26,15 @@ ViewIntent scopedIntent() {
     return ViewIntent{.network = NetworkId{1}};
 }
 
+// One frame of the transport's ordered playback window: the same view a live
+// render would state, at the frame the transport is walking to.
+ViewIntent playbackIntent(std::int64_t frame) {
+    ViewIntent intent;
+    intent.network = NetworkId{1};
+    intent.localTime = frame;
+    return intent;
+}
+
 TEST(Interactive, FullQueueReportsBackpressureWithoutDroppingAnotherViewer) {
     ViewerScheduler scheduler(1);
     ASSERT_TRUE(scheduler.submit({}, scopedIntent(), 1));
@@ -319,5 +328,132 @@ TEST(Interactive, CountsAreScopedPerDestinationAndGlobalStillAggregates) {
                                              scheduler.counts(second).queued + scheduler.counts(third).queued);
     EXPECT_EQ(scheduler.counts(static_cast<ViewerDestination>(9)).queued, 0u);
     EXPECT_EQ(scheduler.counts(static_cast<ViewerDestination>(9)).dropped, 0u);
+}
+
+// Issue #106: the ordered playback window. A frame the transport is walking to
+// is admitted beside the latest-wins slot, keeps its order, and is retired only
+// by a newest-wins submission or a cancellation — never by its own successor.
+TEST(Interactive, OrderedPlaybackWindowKeepsItsFramesAndOnlyLatestWinsRetiresThem) {
+    ViewerScheduler scheduler(2, 3);
+    Document document;
+    const ViewerPlaybackContext context(document);
+    ASSERT_TRUE(scheduler.submit(document, playbackIntent(0), 1));
+    const auto live = scheduler.take();
+    ASSERT_TRUE(live);
+    EXPECT_TRUE(scheduler.complete(*live, true));
+    for (const std::int64_t frame : {1, 2, 3})
+        ASSERT_TRUE(scheduler.preparePlayback(context, playbackIntent(frame), 10 + static_cast<std::uint64_t>(frame)));
+    // Served in admission order, and each frame is still current while its
+    // successor is admitted: that is what removes the one-outstanding-frame
+    // restriction without letting frame N+1 retire frame N.
+    for (const std::int64_t frame : {1, 2, 3}) {
+        const auto prepared = scheduler.take();
+        ASSERT_TRUE(prepared);
+        EXPECT_EQ(prepared->kind, ViewerRequestKind::Replay);
+        EXPECT_EQ(prepared->intent().localTime, frame);
+        EXPECT_TRUE(scheduler.isCurrent(*prepared));
+        EXPECT_TRUE(scheduler.complete(*prepared, true));
+    }
+    EXPECT_EQ(scheduler.counts().queued, 0u);
+    EXPECT_EQ(scheduler.counts().staleRejected, 0u);
+    // A seek states what the panel wants now: it retires the queued window and
+    // rejects the frame already in flight, while publishing the new frame.
+    ASSERT_TRUE(scheduler.preparePlayback(context, playbackIntent(4), 14));
+    const auto inFlight = scheduler.take();
+    ASSERT_TRUE(inFlight);
+    ASSERT_TRUE(scheduler.preparePlayback(context, playbackIntent(5), 15));
+    ASSERT_TRUE(scheduler.submit(document, playbackIntent(9), 30));
+    EXPECT_EQ(scheduler.counts().dropped, 1u);
+    EXPECT_FALSE(scheduler.complete(*inFlight, true));
+    const auto seek = scheduler.take();
+    ASSERT_TRUE(seek);
+    EXPECT_EQ(seek->kind, ViewerRequestKind::Render);
+    EXPECT_EQ(seek->intent().localTime, 9);
+    EXPECT_TRUE(scheduler.complete(*seek, true));
+    EXPECT_FALSE(scheduler.take());
+}
+
+TEST(Interactive, PlaybackWindowIsBoundedPerDestinationAndAdmissionIsCounted) {
+    ViewerScheduler scheduler(2, 2);
+    Document document;
+    const ViewerPlaybackContext context(document);
+    ASSERT_TRUE(scheduler.preparePlayback(context, playbackIntent(1), 1));
+    ASSERT_TRUE(scheduler.preparePlayback(context, playbackIntent(2), 2));
+    EXPECT_FALSE(scheduler.preparePlayback(context, playbackIntent(3), 3));
+    EXPECT_EQ(scheduler.counts().dropped, 1u);
+    EXPECT_EQ(scheduler.counts().queued, 2u);
+    const auto first = scheduler.take();
+    ASSERT_TRUE(first);
+    EXPECT_TRUE(scheduler.complete(*first, true));
+    // Serving one frame frees exactly one slot of the bound.
+    ASSERT_TRUE(scheduler.preparePlayback(context, playbackIntent(3), 4));
+    EXPECT_EQ(scheduler.counts().queued, 2u);
+    for (const std::int64_t frame : {2, 3}) {
+        const auto prepared = scheduler.take();
+        ASSERT_TRUE(prepared);
+        EXPECT_EQ(prepared->intent().localTime, frame);
+        EXPECT_TRUE(scheduler.complete(*prepared, true));
+    }
+    EXPECT_FALSE(scheduler.take());
+    EXPECT_EQ(scheduler.counts().queued, 0u);
+}
+
+TEST(Interactive, DestinationCancelRetiresOnlyThatDestinationsPlaybackWindow) {
+    ViewerScheduler scheduler(4, 4);
+    Document document;
+    const ViewerPlaybackContext context(document);
+    const auto other = static_cast<ViewerDestination>(2);
+    ASSERT_TRUE(scheduler.preparePlayback(context, playbackIntent(1), 1));
+    const auto inFlight = scheduler.take();
+    ASSERT_TRUE(inFlight);
+    ASSERT_TRUE(scheduler.preparePlayback(context, playbackIntent(2), 2));
+    ASSERT_TRUE(scheduler.preparePlayback(context, playbackIntent(1), 1, other));
+    scheduler.cancel(3, ViewerDestination::Interactive);
+    EXPECT_EQ(scheduler.counts(ViewerDestination::Interactive).dropped, 1u);
+    EXPECT_FALSE(scheduler.complete(*inFlight, true));
+    EXPECT_EQ(scheduler.counts(ViewerDestination::Interactive).staleRejected, 1u);
+    const auto otherFrame = scheduler.take();
+    ASSERT_TRUE(otherFrame);
+    EXPECT_EQ(otherFrame->destination, other);
+    EXPECT_EQ(otherFrame->kind, ViewerRequestKind::Replay);
+    EXPECT_TRUE(scheduler.isCurrent(*otherFrame));
+    EXPECT_TRUE(scheduler.complete(*otherFrame, true));
+    EXPECT_EQ(scheduler.counts(other).dropped, 0u);
+    EXPECT_EQ(scheduler.counts(other).staleRejected, 0u);
+    EXPECT_FALSE(scheduler.take());
+}
+
+// The service order the transport depends on: the frame the panel asked for
+// NOW, then the ordered playback window, then the background range.
+TEST(Interactive, InteractiveThenOrderedPlaybackThenRangeIsTheServiceOrder) {
+    ViewerScheduler scheduler(2, 4);
+    Document document;
+    const ViewerPlaybackContext context(document);
+    EvaluationRequest request;
+    request.network = document.rootNetworkId();
+    ASSERT_TRUE(scheduler.requestRange(document, request, 5, 6, 1));
+    ASSERT_TRUE(scheduler.submit(document, playbackIntent(0), 2));
+    ASSERT_TRUE(scheduler.preparePlayback(context, playbackIntent(1), 3));
+    const auto live = scheduler.take(false);
+    ASSERT_TRUE(live);
+    EXPECT_EQ(live->kind, ViewerRequestKind::Render);
+    EXPECT_TRUE(scheduler.complete(*live, true));
+    const auto prepared = scheduler.take(false);
+    ASSERT_TRUE(prepared);
+    EXPECT_EQ(prepared->kind, ViewerRequestKind::Replay);
+    EXPECT_TRUE(scheduler.complete(*prepared, true));
+    // Cache backpressure must neither advance the lazy range nor stall the
+    // foreground units above. Reopening admission resumes at the same frame.
+    EXPECT_TRUE(scheduler.hasWork());
+    EXPECT_FALSE(scheduler.hasWork(false));
+    EXPECT_FALSE(scheduler.take(false));
+    for (const int frame : {5, 6}) {
+        const auto ranged = scheduler.take();
+        ASSERT_TRUE(ranged);
+        EXPECT_EQ(ranged->kind, ViewerRequestKind::CacheRange);
+        EXPECT_EQ(ranged->request().localTime, frame);
+        EXPECT_TRUE(scheduler.complete(*ranged, true));
+    }
+    EXPECT_FALSE(scheduler.take());
 }
 }  // namespace

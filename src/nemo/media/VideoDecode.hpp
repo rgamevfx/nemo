@@ -2,24 +2,18 @@
 
 // Hardware video decode with Vulkan interop (issues #10/#21, spec 10.4).
 //
-// Two distinct color contracts, never conflated:
-//
-//   * Source decode (`ClipDecoder::next`, `decodeClipSoftware`) interprets
-//     the source and produces scene-linear working images in the project's
-//     working space (or Data for a Raw bypass, issue #81). The Y′CbCr →
-//     matrix/range step yields NONLINEAR R′G′B′ only and is mandatory codec
-//     layout work; the resolved RGB input color — a named OCIO input space,
-//     the declared transfer, or no conversion at all — is applied afterwards
-//     exactly once (matrix conversion is not linearization). Decode
-//     interpretation honors matrix, range, chroma location and bit depth from
-//     the stream's declared metadata with the fill-only interpretation hints;
-//     ambiguous metadata is an error, never a silent guess. A `ClipColorInput`
-//     with a project input-color context also lets the config's own file rule
-//     resolve an otherwise undeclared RGB interpretation.
-//   * Viewer-cache replay (`decodeViewerChunkSoftware`) decodes the baked
-//     display-referred representation without re-applying any source
-//     linearization or view transform; the chunk's interpretation metadata
-//     round-trips through `SoftwareClip::metadata`.
+// One color contract: source decode (`ClipDecoder::next`, `decodeClipSoftware`)
+// interprets the source and produces scene-linear working images in the
+// project's working space (or Data for a Raw bypass, issue #81). The Y′CbCr →
+// matrix/range step yields NONLINEAR R′G′B′ only and is mandatory codec layout
+// work; the resolved RGB input color — a named OCIO input space, the declared
+// transfer, or no conversion at all — is applied afterwards exactly once
+// (matrix conversion is not linearization). Decode interpretation honors
+// matrix, range, chroma location and bit depth from the stream's declared
+// metadata with the fill-only interpretation hints; ambiguous metadata is an
+// error, never a silent guess. A `ClipColorInput` with a project input-color
+// context also lets the config's own file rule resolve an otherwise undeclared
+// RGB interpretation.
 //
 // Format validation happens on the ACTUAL decoded frame (pixel format,
 // dimensions, planes, bit depth) before any plane access; unsupported
@@ -184,19 +178,6 @@ public:
                                              const ColorPolicy& policy = {}, const ColorOverride& overrides = {},
                                              const ClipColorInput& color = {});
 
-    // Opens a viewer-cache chunk in display-referred mode. This mode keeps
-    // the encoded transfer untouched and never applies source linearization
-    // or a viewing transform. Returned frames remain device-resident.
-    static std::unique_ptr<ClipDecoder> openViewer(gpu::Instance& instance, gpu::Device& device,
-                                                   gpu::Allocator& allocator, const std::string& path,
-                                                   const std::filesystem::path& convertSpirv);
-
-    // Opens a viewer-cache chunk from bounded caller-owned compressed bytes.
-    // This entry point is viewer-only; source decode has no memory replay API.
-    static std::unique_ptr<ClipDecoder> openViewerMemory(gpu::Instance& instance, gpu::Device& device,
-                                                         gpu::Allocator& allocator, const std::string& name,
-                                                         std::shared_ptr<const std::vector<std::uint8_t>> bytes,
-                                                         const std::filesystem::path& convertSpirv);
     ~ClipDecoder();
     ClipDecoder(const ClipDecoder&) = delete;
     ClipDecoder& operator=(const ClipDecoder&) = delete;
@@ -213,26 +194,22 @@ public:
     // Decodes the next frame and returns its device-resident image in the
     // shared native layout: the packed RGBA32F image of extent (logical width,
     // logical height) holding the frame's R, G, B and A components, left in
-    // GENERAL. Source mode is scene-linear; openViewer() mode is
-    // display-referred.
+    // GENERAL, scene-linear.
     [[nodiscard]] std::unique_ptr<gpu::Image> next(uint64_t timeout_ns);
-    [[nodiscard]] std::unique_ptr<gpu::Image> nextViewer(uint64_t timeout_ns);
 
 private:
     static std::unique_ptr<ClipDecoder> openInternal(gpu::Instance& instance, gpu::Device& device,
                                                      gpu::Allocator& allocator, const std::string& path,
                                                      const std::filesystem::path& convertSpirv,
                                                      const ColorPolicy& policy, const ColorOverride& overrides,
-                                                     const ClipColorInput& color, bool viewerReplay,
-                                                     std::shared_ptr<const std::vector<std::uint8_t>> memoryBytes);
+                                                     const ClipColorInput& color);
     ClipDecoder() = default;
     struct Impl;
     std::unique_ptr<Impl> impl_;
 };
 
 // Software decoded storage. Source frames are SceneLinear (or Data for a Raw
-// bypass); viewer replay frames are DisplayReferred. metadata describes the
-// encoded samples.
+// bypass). metadata describes the encoded samples.
 struct SoftwareClip {
     ClipInfo info;
     std::vector<CpuImage> frames;
@@ -292,36 +269,5 @@ struct SoftwareClip {
 // and the import service so the interpretation vocabulary has one owner.
 [[nodiscard]] ColorOverride colorOverrideFromInterpretation(const std::map<std::string, std::string>& interpretation,
                                                             const std::string& context);
-
-// Viewer-cache replay path: decodes an encoded viewer chunk WITHOUT the
-// source linearization — the frames stay the baked display-referred
-// R′G′B′ the encoder wrote, and `metadata` carries the interpretation read
-// back from the chunk's declared color tags (all must be specified).
-[[nodiscard]] SoftwareClip decodeViewerChunkSoftware(const std::string& path, int64_t maxFrames = -1);
-
-// Thread-confined incremental display-referred reference/replay decoder.
-// Zero dimensions preserve native size; otherwise sample source luma pixel
-// centers by nearest neighbor, reconstruct left-sited chroma bilinearly at
-// that source coordinate, then expand limited-range BT.709 to float RGB.
-// No source-sized float image, linearization or view transform is produced.
-// Owns codec surfaces plus one decoded YUV frame; next() transfers ownership
-// of one output image to the caller. EOF and corrupt input are distinct.
-class ViewerReferenceDecoder {
-public:
-    explicit ViewerReferenceDecoder(const std::string& path, int width = 0, int height = 0);
-    ~ViewerReferenceDecoder();
-    ViewerReferenceDecoder(const ViewerReferenceDecoder&) = delete;
-    ViewerReferenceDecoder& operator=(const ViewerReferenceDecoder&) = delete;
-    [[nodiscard]] const ClipInfo& info() const;
-    // The resolved encoded-RGB interpretation this decoder converts frames by
-    // (issue #81): its kind tells a consumer whether the produced frames are
-    // working-space scene-linear or Raw/Data.
-    [[nodiscard]] const ResolvedInputColor& inputColor() const;
-    [[nodiscard]] std::optional<CpuImage> next();
-
-private:
-    struct Impl;
-    std::unique_ptr<Impl> impl_;
-};
 
 }  // namespace nemo::media

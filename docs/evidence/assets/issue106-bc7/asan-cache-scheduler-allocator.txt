@@ -1,0 +1,81 @@
+Test project /home/rgame/dev/Nemo_Dev2/build/asan
+      Start 373: Gpu.AllocatorBudgetAccounting
+ 1/38 Test #373: Gpu.AllocatorBudgetAccounting .................................................   Passed    3.36 sec
+      Start 374: Gpu.AllocatorReservationPrecedesAllocation
+ 2/38 Test #374: Gpu.AllocatorReservationPrecedesAllocation ....................................   Passed    3.07 sec
+      Start 375: Gpu.AllocatorEligibleEvictionPrecedesAllocation
+ 3/38 Test #375: Gpu.AllocatorEligibleEvictionPrecedesAllocation ...............................   Passed    3.05 sec
+      Start 376: Gpu.AllocatorEvictorDeregistrationWaitsForRunningCallback
+ 4/38 Test #376: Gpu.AllocatorEvictorDeregistrationWaitsForRunningCallback .....................   Passed    3.23 sec
+      Start 377: Gpu.AllocatorDeregistrationCancelsSnapshottedCallbacks
+ 5/38 Test #377: Gpu.AllocatorDeregistrationCancelsSnapshottedCallbacks ........................   Passed    3.04 sec
+      Start 378: Gpu.AllocatorChargeFollowsFinalOwner
+ 6/38 Test #378: Gpu.AllocatorChargeFollowsFinalOwner ..........................................   Passed    3.01 sec
+      Start 708: Interactive.SharedCacheIdentitySurvivesPublicationFromTwoDestinations
+ 7/38 Test #708: Interactive.SharedCacheIdentitySurvivesPublicationFromTwoDestinations .........   Passed   15.71 sec
+      Start 709: Interactive.FullQueueReportsBackpressureWithoutDroppingAnotherViewer
+ 8/38 Test #709: Interactive.FullQueueReportsBackpressureWithoutDroppingAnotherViewer ..........   Passed    0.20 sec
+      Start 710: Interactive.CacheHistorySurvivesScrubButCancellationCannotBeResurrected
+ 9/38 Test #710: Interactive.CacheHistorySurvivesScrubButCancellationCannotBeResurrected .......   Passed    0.20 sec
+      Start 711: Interactive.CurrentFramePreemptsLazyRangeAndOnlyExplicitFramesAreTaken
+10/38 Test #711: Interactive.CurrentFramePreemptsLazyRangeAndOnlyExplicitFramesAreTaken ........   Passed    0.20 sec
+      Start 712: Interactive.SupersedingOneViewerPreservesOtherDestinationAndSnapshot
+11/38 Test #712: Interactive.SupersedingOneViewerPreservesOtherDestinationAndSnapshot ..........   Passed    0.20 sec
+      Start 713: Interactive.CancellationRejectsInflightAndSupersededBacklogIsCounted
+12/38 Test #713: Interactive.CancellationRejectsInflightAndSupersededBacklogIsCounted ..........   Passed    0.20 sec
+      Start 714: Interactive.RangeAtLastRepresentableFrameTerminatesWithoutWrapping
+13/38 Test #714: Interactive.RangeAtLastRepresentableFrameTerminatesWithoutWrapping ............   Passed    0.19 sec
+      Start 715: Interactive.CancelledSubmissionRetainsResourcesUntilActualGpuCompletion
+14/38 Test #715: Interactive.CancelledSubmissionRetainsResourcesUntilActualGpuCompletion .......   Passed   12.71 sec
+      Start 716: Interactive.DestinationScopedCancelDropsOnlyThatDestinationsWork
+15/38 Test #716: Interactive.DestinationScopedCancelDropsOnlyThatDestinationsWork ..............   Passed    0.20 sec
+      Start 717: Interactive.RetireDestinationDropsQueuedWorkAndRejectsInflight
+16/38 Test #717: Interactive.RetireDestinationDropsQueuedWorkAndRejectsInflight ................   Passed    0.20 sec
+      Start 718: Interactive.CountsAreScopedPerDestinationAndGlobalStillAggregates
+17/38 Test #718: Interactive.CountsAreScopedPerDestinationAndGlobalStillAggregates .............   Passed    0.20 sec
+      Start 719: Interactive.OrderedPlaybackWindowKeepsItsFramesAndOnlyLatestWinsRetiresThem
+18/38 Test #719: Interactive.OrderedPlaybackWindowKeepsItsFramesAndOnlyLatestWinsRetiresThem ...   Passed    0.19 sec
+      Start 720: Interactive.PlaybackWindowIsBoundedPerDestinationAndAdmissionIsCounted
+19/38 Test #720: Interactive.PlaybackWindowIsBoundedPerDestinationAndAdmissionIsCounted ........   Passed    0.19 sec
+      Start 721: Interactive.DestinationCancelRetiresOnlyThatDestinationsPlaybackWindow
+20/38 Test #721: Interactive.DestinationCancelRetiresOnlyThatDestinationsPlaybackWindow ........   Passed    0.20 sec
+      Start 722: Interactive.InteractiveThenOrderedPlaybackThenRangeIsTheServiceOrder
+21/38 Test #722: Interactive.InteractiveThenOrderedPlaybackThenRangeIsTheServiceOrder ..........   Passed    0.20 sec
+      Start 723: ViewerCache.SparseReplaySurvivesReopeningWithoutEvaluationOrDoubleTransform
+22/38 Test #723: ViewerCache.SparseReplaySurvivesReopeningWithoutEvaluationOrDoubleTransform ...   Passed   13.47 sec
+      Start 724: ViewerCache.ViewEditsPreserveUpstreamReuseAndOnlyReplaceVisitedFrames
+23/38 Test #724: ViewerCache.ViewEditsPreserveUpstreamReuseAndOnlyReplaceVisitedFrames .........   Passed   13.31 sec
+      Start 725: ViewerCache.StaleAndCorruptFramesNeverBecomeReplayable
+24/38 Test #725: ViewerCache.StaleAndCorruptFramesNeverBecomeReplayable ........................   Passed   13.68 sec
+      Start 726: ViewerCache.QueueContentionWaitsInsteadOfLosingARequestedFrame
+25/38 Test #726: ViewerCache.QueueContentionWaitsInsteadOfLosingARequestedFrame ................   Passed   13.59 sec
+      Start 727: ViewerCache.BoundedPreparationDropsRatherThanGrowingBehindAStalledWriter
+26/38 Test #727: ViewerCache.BoundedPreparationDropsRatherThanGrowingBehindAStalledWriter ......   Passed   13.28 sec
+      Start 728: ViewerCache.SupersessionDuringEncodingRejectsTheCompletedWrite
+27/38 Test #728: ViewerCache.SupersessionDuringEncodingRejectsTheCompletedWrite ................   Passed   13.14 sec
+      Start 729: ViewerCache.StalePredecessorKeepsValidSiblingsAcrossPersistence
+28/38 Test #729: ViewerCache.StalePredecessorKeepsValidSiblingsAcrossPersistence ...............   Passed   13.29 sec
+      Start 730: ViewerCache.OddSizedRegionsReplayAtTheirExactRequestedExtent
+29/38 Test #730: ViewerCache.OddSizedRegionsReplayAtTheirExactRequestedExtent ..................   Passed   13.54 sec
+      Start 731: ViewerCache.KnownReplayHitBypassesTheGraphWhileTheHeavyPathIsUnavailable
+30/38 Test #731: ViewerCache.KnownReplayHitBypassesTheGraphWhileTheHeavyPathIsUnavailable ......   Passed   13.39 sec
+      Start 732: ViewerCache.ValidFrameStillLoadingIsNotAMiss
+31/38 Test #732: ViewerCache.ValidFrameStillLoadingIsNotAMiss ..................................   Passed   13.63 sec
+      Start 733: ViewerCache.ReplaySeamServesKnownFramesAndNeverRendersUnknownOnes
+32/38 Test #733: ViewerCache.ReplaySeamServesKnownFramesAndNeverRendersUnknownOnes .............   Passed   16.72 sec
+      Start 734: ViewerCache.ReplayPresentsTheSameDisplayAsTheLiveFrame
+33/38 Test #734: ViewerCache.ReplayPresentsTheSameDisplayAsTheLiveFrame ........................   Passed   18.17 sec
+      Start 735: ViewerCache.ReplayPreservesTheDemandedAlphaMatte
+34/38 Test #735: ViewerCache.ReplayPreservesTheDemandedAlphaMatte ..............................   Passed   24.49 sec
+      Start 736: ViewerCache.Bc7BlocksPreserveRgbaAcrossOddSizedUpload
+35/38 Test #736: ViewerCache.Bc7BlocksPreserveRgbaAcrossOddSizedUpload .........................   Passed   14.06 sec
+      Start 737: ViewerCache.ReopeningAndPersistingIdenticalContentKeepsBothRecordsReadable
+36/38 Test #737: ViewerCache.ReopeningAndPersistingIdenticalContentKeepsBothRecordsReadable ....   Passed   13.64 sec
+      Start 738: ViewerCache.PhysicalDiskFootprintHonoursTheConfiguredBudget
+37/38 Test #738: ViewerCache.PhysicalDiskFootprintHonoursTheConfiguredBudget ...................   Passed   13.63 sec
+      Start 739: ViewerCache.DamagedRecordsAreRefusedWithoutLosingTheirNeighbours
+38/38 Test #739: ViewerCache.DamagedRecordsAreRefusedWithoutLosingTheirNeighbours ..............   Passed   13.78 sec
+
+100% tests passed, 0 tests failed out of 38
+
+Total Test time (real) = 298.59 sec

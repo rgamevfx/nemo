@@ -58,8 +58,10 @@ std::unique_ptr<Device> Device::create(Instance& instance, const DeviceConfig& c
     VkPhysicalDeviceFeatures enabled{};
     enabled.shaderStorageImageReadWithoutFormat = device->features_.shaderStorageImageReadWithoutFormat;
     enabled.shaderStorageImageWriteWithoutFormat = device->features_.shaderStorageImageWriteWithoutFormat;
-    // Compact viewer encoding writes R8 luma/chroma storage planes.
+    // Source conversion uses compact storage planes; display-cache replay
+    // samples BC7 on the execution device without requiring BC7 storage images.
     enabled.shaderStorageImageExtendedFormats = device->features_.shaderStorageImageExtendedFormats;
+    enabled.textureCompressionBC = device->features_.textureCompressionBC;
     VkPhysicalDeviceHostQueryResetFeatures hostQueryReset{};
     hostQueryReset.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_HOST_QUERY_RESET_FEATURES;
     VkPhysicalDeviceFeatures2 queried{};

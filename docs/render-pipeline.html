@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>Nemo — Render &amp; playback pipeline</title>
+<style>
+:root{--ink:#182c3d;--muted:#526575;--line:#d6e0e7;--paper:#f5f7f9;--live:#087c70;--live-bg:#eef9f6;--cache:#6945aa;--cache-bg:#f5f1fb;--copy:#9a5900;--copy-bg:#fff4df}
+*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}main{max-width:1120px;margin:auto;padding:30px 32px 24px}h1,h2,h3,p{margin:0}h1{font-size:29px;letter-spacing:-1px;line-height:1.15}header{display:flex;justify-content:space-between;align-items:start;gap:20px;margin-bottom:18px}.eyebrow{font-size:11px;font-weight:750;letter-spacing:1.6px;text-transform:uppercase;color:var(--muted);margin-bottom:7px}.subtitle{color:var(--muted);margin-top:8px}.stamp{font-size:11px;color:var(--muted);text-align:right;white-space:nowrap;padding-top:4px}.request{background:var(--ink);color:white;text-align:center;border-radius:12px;padding:14px 18px}.request strong{font-size:17px}.request small{display:block;color:#c3d3df;margin-top:4px;font-size:12px}.arrow{font-weight:700;color:var(--muted);text-align:center;height:23px;line-height:23px;font-size:19px}.routes{display:grid;grid-template-columns:1fr 1fr;gap:20px}.route-label{font-size:12px;font-weight:800;letter-spacing:.8px;text-align:center;padding:10px 0 8px}.route-label.live{color:var(--live)}.route-label.cache{color:var(--cache)}.lane{border:1px solid var(--line);border-top:3px solid var(--live);border-radius:12px;background:white;padding:15px;display:flex;flex-direction:column}.lane.replay{border-top-color:var(--cache)}.lane h2{font-size:18px;letter-spacing:-.4px;margin-bottom:11px}.step{border:1px solid #d5e9e2;background:var(--live-bg);border-radius:8px;padding:10px 12px}.replay .step{border-color:#e2d8ef;background:var(--cache-bg)}.step h3{font-size:14px;margin-bottom:3px}.step p{font-size:12px;color:var(--muted)}.step .paths{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:7px}.paths p+p{border-left:1px solid var(--line);padding-left:12px}.tag{display:inline-block;font-size:10px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;color:var(--copy);background:var(--copy-bg);padding:1px 5px;border-radius:4px;margin-right:3px}.output{font-weight:700;text-align:center;font-size:13px;padding:10px 8px;border-radius:8px;border:1px solid #b8d9cf;background:var(--live-bg)}.replay .output{border-color:#d2c0e6;background:var(--cache-bg)}.output small{display:block;font-weight:400;color:var(--muted);font-size:11px;margin-top:2px}.lane-note{font-size:11px;color:var(--muted);padding:10px 3px 0;margin-top:auto}.lane-note strong{color:var(--ink)}.spacer{flex:1;min-height:7px}.present{margin-top:15px;padding:13px 16px;background:#eaf0f5;border:1px solid #cbd8e3;border-radius:10px;display:grid;grid-template-columns:140px 1fr;gap:12px;align-items:center}.present h2{font-size:14px}.present p{font-size:13px}.present small{display:block;color:var(--muted);font-size:11px;margin-top:3px}.writer{margin-top:17px;background:white;border:1px solid var(--line);border-radius:12px;padding:14px 16px}.writer-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:10px}.writer h2{font-size:16px}.writer-head p{font-size:11px;color:var(--muted)}.encode-flow{display:grid;grid-template-columns:1fr 24px 1.25fr 24px 1.1fr;align-items:stretch}.encode-flow .step{background:var(--cache-bg);border-color:#e2d8ef}.across{align-self:center;text-align:center;color:var(--cache);font-size:20px}.codec-note{font-size:11px;color:var(--muted);margin-top:9px}.notes{display:grid;grid-template-columns:repeat(3,1fr);gap:13px;margin-top:15px}.note{font-size:11px;color:var(--muted);padding-left:10px;border-left:3px solid #d4a44e}.note strong{display:block;color:var(--ink);font-size:12px;margin-bottom:2px}details{margin-top:17px;border-top:1px solid var(--line);padding-top:11px;font-size:12px;color:var(--muted)}summary{cursor:pointer;font-weight:650;color:var(--ink)}.detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:12px}.detail-grid p{margin-bottom:9px}.detail-grid h3{font-size:12px;color:var(--ink);margin-bottom:6px}code{font-size:11px;overflow-wrap:anywhere}footer{font-size:10px;color:var(--muted);display:flex;justify-content:space-between;gap:15px;margin-top:14px}.key{font-weight:750;color:var(--cache)}
+@media(max-width:700px){main{padding:20px 16px}header{display:block}.stamp{text-align:left;margin-top:8px}h1{font-size:25px}.routes{grid-template-columns:1fr;gap:5px}.present{grid-template-columns:1fr;gap:5px}.writer-head{display:block}.writer-head p{margin-top:4px}.encode-flow{grid-template-columns:1fr}.across{transform:rotate(90deg);height:25px;line-height:25px}.notes,.detail-grid{grid-template-columns:1fr}.notes{gap:9px}footer{display:block}footer span{display:block;margin-top:3px}}
+@media print{@page{size:A4 landscape;margin:9mm}body{background:white;font-size:12px}main{max-width:none;padding:0}header{margin-bottom:10px}h1{font-size:24px}.subtitle{font-size:12px}.request{padding:9px}.lane{padding:10px}.step{padding:7px 10px}.lane h2{margin-bottom:8px}.arrow{height:19px;line-height:19px}.writer{margin-top:10px;padding:10px 12px}.present{margin-top:10px;padding:9px 12px}.notes{margin-top:10px}.note{font-size:10px}details{display:none}footer{margin-top:9px}*{-webkit-print-color-adjust:exact;print-color-adjust:exact}.routes,.writer,.present,.notes{break-inside:avoid}}
+@media print{main{zoom:.74}}
+</style>
+</head>
+<body>
+<main>
+<header>
+<div><p class="eyebrow">Nemo · BC7 viewer-cache cutover · #106</p><h1>Render &amp; playback pipeline</h1><p class="subtitle"><strong>Validated cache hit = no graph planning or effect rendering.</strong> Live and replay share the existing presentation handoff.</p></div>
+<p class="stamp">Architecture · 21 Sep 2026<br>Functional evidence is recorded in issue #106</p>
+</header>
+<section class="request" aria-label="Frame request and cache lookup">
+<strong>Immutable playback context + requested frame → validated representation index</strong>
+<small>Effective content + mapped time + resolution/region/channels + color/config/view + BC7 version · edits revalidate affected records</small>
+</section>
+<div class="routes">
+<div>
+<p class="route-label live">↓ GENUINE MISS / INVALID REPRESENTATION</p>
+<section class="lane" aria-labelledby="live-heading">
+<h2 id="live-heading">A · Resolve demand + live render</h2>
+<div class="step"><h3>Source file → decode + input color</h3><div class="paths"><p><strong>Hardware video</strong><br>GPU YUV surfaces → GPU RGB conversion + input OCIO</p><p><strong>Software / still / sequence</strong><br>CPU decode + color → staging buffer → <span class="tag">upload</span> GPU</p></div></div>
+<div class="arrow" aria-hidden="true">↓</div>
+<div class="step"><h3>Working GPU buffers → effects</h3><p>Scene-linear float images · reuse matching intermediates.<br>Blur / Grade / Merge / … → output + scratch buffers.</p></div>
+<div class="arrow" aria-hidden="true">↓</div>
+<div class="step"><h3>Channel projection → viewer color transform</h3><p>GPU OCIO for RGB; data channels bypass color.<br>Projection writes a buffer only when needed.</p></div>
+<div class="arrow" aria-hidden="true">↓</div>
+<div class="output">Display-referred RGBA32F · GPU<small>Same image retained for presentation + background encoding.</small></div>
+<p class="lane-note"><strong>Two outputs:</strong> ↓ PRESENT · and ↓ CACHE WRITER</p>
+</section>
+</div>
+<div>
+<p class="route-label cache">↓ VALID HIT · READY OR LOADING</p>
+<section class="lane replay" aria-labelledby="replay-heading">
+<h2 id="replay-heading">B · Cached playback</h2>
+<div class="step"><h3>Find the independent BC7 frame</h3><p><strong>Compressed GPU resident hit:</strong> use the texture.<br>Otherwise: bounded compressed RAM hot set or indexed disk pack.</p></div>
+<div class="arrow" aria-hidden="true">↓</div>
+<div class="step"><h3>Asynchronous block read + upload</h3><p>Direction-aware read-ahead visits existing entries only.<br>Loading coalesces; it does not trigger live rendering.<br>No video demux, decoder, GOP dependency or YUV conversion.</p></div>
+<div class="arrow" aria-hidden="true">↓</div>
+<div class="step"><h3>Bounded ready texture queue</h3><p>Preparation overlaps clock-driven presentation.<br>No source decode, effect execution, float reconstruction or second color transform.</p></div>
+<div class="arrow" aria-hidden="true">↓</div>
+<div class="output">Display-referred BC7 RGBA · GPU<small>UNORM sampling · each frame retains its own logical geometry and alpha metadata.</small></div>
+<p class="lane-note"><strong>One output:</strong> ↓ PRESENT only · no re-encoding</p>
+</section>
+</div>
+</div>
+<section class="present" aria-labelledby="present-heading">
+<h2 id="present-heading">↓ PRESENT<br>A or B</h2>
+<div><p>Live float image <em>or</em> BC7 texture sample → <span class="tag">GPU write</span> shared RGBA8 → Qt Vulkan texture → overlays → screen</p><small>Separate execution + Qt devices on the same GPU · external memory + semaphore ordering · asynchronous preparation keeps completion waits off the UI thread.</small></div>
+</section>
+<section class="writer" aria-labelledby="writer-heading">
+<div class="writer-head"><h2 id="writer-heading">A → Background cache writer → B</h2><p>Does not gate first display · bounded queue · superseded work discarded</p></div>
+<div class="encode-flow">
+<div class="step"><h3>Retain requested live GPU image</h3><p>No image copy at enqueue.<br>Actual allocation bytes charged.<br>Retain only through the writer's GPU use.</p></div>
+<div class="across" aria-hidden="true">→</div>
+<div class="step"><h3>Vulkan compute → BC7 blocks</h3><p>4×4 texels / 16-byte block.<br>Deterministic partial-edge padding.<br><span class="tag">GPU copy</span> blocks → sampleable BC7 texture.</p></div>
+<div class="across" aria-hidden="true">→</div>
+<div class="step"><h3>Independent ready frame + persistence</h3><p>Ready in memory before disk commit.<br><span class="tag">Compressed-only readback</span> → indexed pack.<br>Publish durable metadata only with a complete validated payload.</p></div>
+</div>
+<p class="codec-note"><strong>One representation:</strong> BC7 RGBA, already display-encoded; no sRGB sampling decode and no alternate cache codec. Unsupported capabilities report cache unavailability while live rendering stays available. Source video and full-quality export retain their legitimate media codecs.</p>
+</section>
+<aside class="notes" aria-label="Playback correctness boundaries">
+<div class="note"><strong>Ordered versus latest-wins</strong>Preparing the next playback frame cannot stale its predecessor. Seek, edit, reverse, loop and closure reject obsolete publication independently per viewer.</div>
+<div class="note"><strong>Bytes before allocation</strong>Shared allocator reservations and eligible eviction cover active work. RAM, compressed residency, staging, retained inputs, metadata and disk remain bounded; active resources stay pinned.</div>
+<div class="note"><strong>Independent records</strong>Replacing a frame preserves its neighbors. Corrupt or incomplete records are rejected; pack reclamation touches cache-owned storage only. Lossy display data never supplies export or working-space picks.</div>
+</aside>
+<details>
+<summary>Buffer / copy details and source map</summary>
+<div class="detail-grid">
+<div>
+<h3>Buffer and synchronization boundaries</h3>
+<p><strong>Working images:</strong> four channels use packed RGBA32F; other channel counts use scalar R32F planes. The small scene-linear intermediate store is separate from the compressed playback cache. Data/Raw sources retain their declared interpretation.</p>
+<p><strong>Effects:</strong> compatible dispatches/barriers are batched; Blur uses a scratch image for its separable passes. Region/output crops may add GPU writes. There is no routine per-node CPU download.</p>
+<p><strong>Decode:</strong> hardware keeps pixels on-device; software paths copy CPU pixels to mapped staging, then upload. Decode/conversion convenience paths wait for GPU completion.</p>
+<p><strong>Presentation:</strong> one compute pass writes shared RGBA8 directly. BC7 decompression is texture sampling on the execution device, not a float image reconstruction; Qt imports the shared surface and waits through the external semaphore. Overlays are not cached.</p>
+<p><strong>Lifetime:</strong> images, blocks, staging and descriptors stay retained until their actual GPU use completes. Queue policy belongs to the existing scheduler; submission serialization stays with the device. Cancellation changes publication eligibility, not completion ownership.</p>
+<p><strong>Scope:</strong> viewer playback only. Compressed display images never become scene-linear effect inputs or full-quality export sources. Working-space pixel picking and explicit delivery use separate evaluation paths.</p>
+</div>
+<div>
+<h3>Source map · repository-relative paths</h3>
+<p><code>src/nemo/eval/Viewer.cpp</code><br>Validated per-frame description/identity index; live evaluation on real misses.</p>
+<p><code>src/nemo/eval/ViewerCache.cpp</code><br>Independent pack records, RAM/resident tiers, asynchronous encoding/read/upload readiness.</p>
+<p><code>src/nemo/gpu/Bc7.cpp</code><br>Compute block encoder and compressed uploads/readback; actual capability checks.</p>
+<p><code>src/nemo/gpu/Allocator.cpp</code><br>Allocation charges, active reservations and eligible eviction; completion-retained resource tokens.</p>
+<p><code>src/nemo/gpu/ViewerPresentation.cpp</code><br>Live or BC7 → shared RGBA8; external-memory/semaphore handoff.</p>
+<p><code>src/nemo/eval/ViewerScheduler.cpp</code><br>Ordered playback versus latest-wins interaction; bounded admission and freshness.</p>
+<p><code>apps/nemo-ui/ViewerRuntime.cpp · ViewerController.cpp</code><br>Overlapped preparation and transport-driven presentation through existing controls.</p>
+<p><strong>Verification:</strong> this diagram states ownership and data flow, not measured throughput or universal device support. The <a href="evidence/assets/issue106-bc7/verification.json">#106 verification record</a> separates native cadence, image tolerances, pressure/failure results and platform limits.</p>
+</div>
+</div>
+</details>
+<footer><span>Solid arrows = frame flow · orange labels = pixel writes / transfers · A/B = paths, not separate render engines</span><span>Standalone HTML · no scripts, fonts or network dependencies · landscape print ready</span></footer>
+</main>
+</body>
+</html>

@@ -1,0 +1,16 @@
+{
+  "raster": [
+    65,
+    21
+  ],
+  "maximum_absolute_error_rgba": 0.02196076512336731,
+  "rmse_rgba": 0.005615234761750956,
+  "per_channel_maximum_error": [
+    0.02196076512336731,
+    0.02196076512336731,
+    0.02196076512336731,
+    0.005602240562438965
+  ],
+  "absolute_tolerance_rgba": 0.08,
+  "capture": "Production GPU BC7 encode, compressed readback and upload, independent diagnostic texelFetch to RGBA32F readback. Captured from the passing odd-raster regression through a throwaway instrumented binary outside the repository. Atlas uses nearest-neighbour 8x expansion; RGB is opaque and alpha shown separately, with no viewing transform."
+}

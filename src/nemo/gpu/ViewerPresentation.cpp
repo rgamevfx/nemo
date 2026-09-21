@@ -84,56 +84,64 @@ std::shared_ptr<PresentationReady> shareReadiness(Device& producer, Device& cons
     handle.imported();
     return ready;
 }
-}  // namespace
 
-ViewerPresentation prepareViewerPresentation(Device& producer, Allocator& allocator, Device& consumer,
-                                             const Image& source, ColorInterpretation color,
-                                             const std::vector<std::uint32_t>& spirv, ViewerChannel channel,
-                                             std::uint64_t timeout_ns) {
-    if (color != ColorInterpretation::DisplayReferred)
-        throw GpuException(GpuError::InvalidRequest, "viewer presentation requires the completed viewing transform");
-    if (source.format() != VK_FORMAT_R32G32B32A32_SFLOAT || source.dimensions() != 2)
-        throw GpuException(GpuError::InvalidRequest, "viewer presentation requires a 2D RGBA32F image");
+// Two distinct, sharing-enabled logical devices on one physical GPU: the
+// execution device that produces the surface and the device that samples it.
+void requirePresentationDevices(Device& producer, Device& consumer) {
     if (producer.handle() == consumer.handle() || producer.physical() != consumer.physical() ||
         !producer.external_sharing_enabled() || !consumer.external_sharing_enabled())
         throw GpuException(GpuError::InvalidRequest,
                            "viewer presentation requires separate sharing-enabled devices on the same GPU");
-    if (!producer.features().shaderStorageImageReadWithoutFormat ||
-        !producer.features().shaderStorageImageWriteWithoutFormat)
-        throw GpuException(GpuError::InvalidRequest,
-                           "viewer presentation requires storage image read/write without format");
+}
+
+// The shared presentation surface is RGBA8 UNORM on both sides.
+void requirePresentationSurface(Device& producer) {
     VkFormatProperties properties{};
     vkGetPhysicalDeviceFormatProperties(producer.physical(), VK_FORMAT_R8G8B8A8_UNORM, &properties);
     constexpr auto required = VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT;
     if ((properties.optimalTilingFeatures & required) != required)
         throw GpuException(GpuError::InvalidRequest,
                            "viewer presentation requires sampled/storage RGBA8 UNORM support");
+}
+
+// Presentation-only channel selection, written before create() captures the
+// allocation's owner token; the pass keeps it alive through GPU completion.
+[[nodiscard]] Buffer createChannelUniform(Allocator& allocator, ViewerChannel channel) {
+    constexpr VkDeviceSize channelBytes = 16;  // std140 uniform block, vec4-aligned
+    auto buffer =
+        allocator.create_buffer(channelBytes, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, MemoryPreference::HostMapped);
+    std::memset(buffer.mapped(), 0, static_cast<std::size_t>(channelBytes));
+    const auto channelValue = static_cast<std::uint32_t>(channel);
+    std::memcpy(buffer.mapped(), &channelValue, sizeof(channelValue));
+    return buffer;
+}
+
+ViewerPresentation preparePresentation(Device& producer, Allocator& allocator, Device& consumer, const Image& source,
+                                       DescriptorKind sourceKind, const std::vector<std::uint32_t>& spirv,
+                                       ViewerChannel channel, std::uint64_t timeout_ns) {
+    requirePresentationDevices(producer, consumer);
+    requirePresentationSurface(producer);
     const auto extent = source.extent();
     auto [output, imported] = allocator.create_shared_image(
         consumer, extent.width, extent.height, VK_FORMAT_R8G8B8A8_UNORM,
         VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
     auto ready = shareReadiness(producer, consumer);
-    // Presentation-only channel selection. The host-mapped buffer is written
-    // before create() captures its owner token, and pass->retain() keeps the
-    // allocation alive through GPU completion.
-    constexpr VkDeviceSize channelBytes = 16;  // std140 uniform block, vec4-aligned
-    auto channelBuffer =
-        allocator.create_buffer(channelBytes, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, MemoryPreference::HostMapped);
-    std::memset(channelBuffer.mapped(), 0, static_cast<std::size_t>(channelBytes));
-    const auto channelValue = static_cast<std::uint32_t>(channel);
-    std::memcpy(channelBuffer.mapped(), &channelValue, sizeof(channelValue));
+    auto channelBuffer = createChannelUniform(allocator, channel);
     auto pass = ComputePass::create(producer, spirv,
-                                    {{0, 0, DescriptorKind::StorageImage, nullptr, &source},
+                                    {{0, 0, sourceKind, nullptr, &source, true},
                                      {0, 1, DescriptorKind::StorageImage, nullptr, &output},
                                      {0, 2, DescriptorKind::UniformBuffer, &channelBuffer}});
     auto& queue = producer.submissions(producer.graphics_family());
     SubmissionQueue::TimelineSemaphores handoff;
     handoff.signal = {ready->signal};
     handoff.signalValues = {0};
+    const auto sourceLayout = sourceKind == DescriptorKind::CombinedImageSampler
+                                  ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+                                  : VK_IMAGE_LAYOUT_GENERAL;
     const auto completion = queue.submit(
         [&](VkCommandBuffer command) {
-            recordImageBarrier(command, source, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_GENERAL,
-                               VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_ACCESS_MEMORY_WRITE_BIT,
+            recordImageBarrier(command, source, sourceLayout, sourceLayout, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                               VK_ACCESS_MEMORY_WRITE_BIT | VK_ACCESS_MEMORY_READ_BIT,
                                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
             recordImageBarrier(command, output, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL,
                                VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
@@ -154,9 +162,39 @@ ViewerPresentation prepareViewerPresentation(Device& producer, Allocator& alloca
         {pass->retain(), ready}, handoff, timeout_ns);
     if (!completion)
         throw GpuException(GpuError::SubmissionTimeout, "viewer presentation queue capacity unavailable");
-    if (!queue.wait(*completion, timeout_ns))
-        throw GpuException(GpuError::SubmissionTimeout, "viewer presentation timed out; GPU resources remain retained");
+    // The external semaphore orders Qt's read; producer completion retains
+    // both the shared allocation and semaphore pair even after cancellation.
     return {std::move(imported), std::move(ready)};
+}
+}  // namespace
+
+ViewerPresentation prepareViewerPresentation(Device& producer, Allocator& allocator, Device& consumer,
+                                             const Image& source, ColorInterpretation color,
+                                             const std::vector<std::uint32_t>& spirv, ViewerChannel channel,
+                                             std::uint64_t timeout_ns) {
+    if (color != ColorInterpretation::DisplayReferred)
+        throw GpuException(GpuError::InvalidRequest, "viewer presentation requires the completed viewing transform");
+    if (source.format() != VK_FORMAT_R32G32B32A32_SFLOAT || source.dimensions() != 2)
+        throw GpuException(GpuError::InvalidRequest, "viewer presentation requires a 2D RGBA32F image");
+    if (!producer.features().shaderStorageImageReadWithoutFormat ||
+        !producer.features().shaderStorageImageWriteWithoutFormat)
+        throw GpuException(GpuError::InvalidRequest,
+                           "viewer presentation requires storage image read/write without format");
+    return preparePresentation(producer, allocator, consumer, source, DescriptorKind::StorageImage, spirv, channel,
+                               timeout_ns);
+}
+
+ViewerPresentation prepareViewerPresentation(Device& producer, Allocator& allocator, Device& consumer,
+                                             const Bc7Image& source, const std::vector<std::uint32_t>& spirv,
+                                             ViewerChannel channel, std::uint64_t timeout_ns) {
+    if (source.image.format() != VK_FORMAT_BC7_UNORM_BLOCK || source.image.dimensions() != 2)
+        throw GpuException(GpuError::InvalidRequest, "BC7 presentation requires a 2D BC7 UNORM image");
+    VkFormatProperties properties{};
+    vkGetPhysicalDeviceFormatProperties(producer.physical(), VK_FORMAT_BC7_UNORM_BLOCK, &properties);
+    if ((properties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT) == 0)
+        throw GpuException(GpuError::InvalidRequest, "BC7 presentation requires sampled BC7 UNORM support");
+    return preparePresentation(producer, allocator, consumer, source.image, DescriptorKind::CombinedImageSampler, spirv,
+                               channel, timeout_ns);
 }
 
 void acquireViewerPresentation(Device& consumer, const ViewerPresentation& presentation, VkCommandBuffer command) {

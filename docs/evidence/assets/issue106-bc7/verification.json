@@ -1,0 +1,263 @@
+{
+  "issue": 106,
+  "date": "2026-09-21",
+  "base_commit": "5b8c752eb1d77abdc41af2e969249efa0caaae92",
+  "branch": "issue/104-direct-subnet-viewing",
+  "scope": "BC7 viewer-cache clean cutover through existing GPU/cache/session/scheduler/presentation owners; no panel appearance redesign.",
+  "environment": {
+    "platform": "Linux native Wayland",
+    "gpu": "NVIDIA GeForce GTX 1070",
+    "driver": "580.173.02",
+    "vram_mib": 8192,
+    "shaders": "Slang 2026.17",
+    "asan_graphics": "Existing issue70 process-local repaired Mesa EGL selection; installed system packages and suppression file unchanged."
+  },
+  "ownership": {
+    "protected": "Pre-existing #37/#104, .gitignore, AGENTS.md, ColorWarp files/assets and unrelated untracked artifacts remain outside the commit. main.cpp preserves the original qrc:/qt/qml import hunk; ExtensionUiTests.cpp preserves 264 original added/removed user lines.",
+    "verification_tree": "Checks ran in the supplied working tree with those pre-existing user changes present, not an isolated checkout of the scoped commit.",
+    "admission_scope": "Allocator::Reservation, reserve, register_evictor and completion-retained actual-byte charges implement only the #106 prerequisite slice of #97; broader #97/#14/#95 acceptance stays open.",
+    "intentional_separate_policies": "Encode admission rechecks each producer contributor freshness/retirement; upload admission serves retained shared identity across consumers and must not inherit producer cancellation. Shared GPU completion observation is consolidated."
+  },
+  "api_and_baseline_changes": [
+    "ViewerCache stores independent indexed BC7 records with asynchronous readiness; video encoding/chunk/GOP/bitrate APIs and cache-only modules removed.",
+    "ViewerFrame honestly separates live float image and BC7 replay image; direct replay overloads have no Document/live-render fallback.",
+    "Immutable ViewerPlaybackContext and bounded ordered transport coexist with latest-wins seeks/edits.",
+    "Shared compressed pixels are rebound to each validated consumer request/description, never producer target identity.",
+    "BC7 is an explicitly lossy SDR viewer representation; no source, effect, picker, delivery or HDR precision baseline is substituted."
+  ],
+  "production_correctness": {
+    "builds": {
+      "debug": "passed",
+      "release": "passed",
+      "asan_affected_targets": "passed",
+      "warnings": "Existing minizip mktemp linker and Qt QML configuration warnings; no new dependency."
+    },
+    "focused_cache_scheduler": {
+      "passed": 32,
+      "scope": "ViewerCache.* and Interactive.* native GPU/session/scheduler behavior selection"
+    },
+    "final_regressions": {
+      "passed": 6,
+      "log": "debug-final-regressions.txt",
+      "scope": "Presentation lifetime/channel quantization, shared content publication, graph-free replay, consumer target rebinding on first/indexed access, disk failure leaves live rendering available."
+    },
+    "full_debug_suite": {
+      "command": "ctest --preset debug -j1",
+      "runs": 1,
+      "total": 1001,
+      "passed": 902,
+      "skipped": 94,
+      "failed_at_run": 5,
+      "seconds": 363.78,
+      "log": "debug-full-suite-summary.txt",
+      "resolved_afterward": [
+        "Two presentation fixtures now drain producer-retained imports before their consumer device dies.",
+        "Equivalent-pixel nodes now retain consumer request identity on first and indexed replay.",
+        "Disk-failure regression no longer assumes RAM publication waits for durable disk commit; verifies a subsequent live frame."
+      ],
+      "remaining_known_failure": "Viewer.InterpretationMapIsParsedStrictly: pre-existing unsupported colorimetry field fixture; untouched.",
+      "followup": "Focused checks only after fixes; no second full suite."
+    },
+    "asan_ubsan": {
+      "cache_scheduler_allocator": {
+        "passed": 38,
+        "seconds": 298.59,
+        "log": "asan-cache-scheduler-allocator.txt"
+      },
+      "final_regressions": {
+        "passed": 6,
+        "seconds": 100.27,
+        "log": "asan-final-regressions.txt"
+      },
+      "native": {
+        "command": "build/asan/tests/nemo_workspace_ui_tests --gtest_filter=ViewerDestinationSurface.TwoViewerPanelsRenderIndependentDestinations:ViewerDestinationSurface.CachedToLiveTransitionKeepsTransportPacing:DiskBackedRangeReplay.CachedRangePlaysForwardAndReverseFromTheOrderedWindow",
+        "passed": 2,
+        "failed": 1,
+        "exit_code": 1,
+        "log": "asan-native-pressure.txt",
+        "disk_record": "asan-native-disk-replay.json",
+        "disk_result": "All 199 forward and 199 reverse transitions were cache hits with no omissions, repeats or wrong frames; one reverse Qt callback gap of 13 ms failed the burst assertion. No timing threshold was loosened.",
+        "lsan": "1264 bytes in 14 Qt/Wayland platform/keyboard-focus allocations, matching the prior issue102 report. Not a sanitizer-clean native exit. No new suppression or leak-detection disablement.",
+        "prior_leak_record": "../issue102-inspector/session.json",
+        "scope": "Native pressure/cancellation/closure exercised with 32 MiB RAM and 32 MiB cache residency; native sanitizer gate is not claimed green."
+      }
+    },
+    "cli": {
+      "command": "build/debug/apps/nemo-cli/nemo-cli cache-viewer docs/evidence/assets/issue106-bc7/cli-sparse-project.nemo --cache-dir <disposable-directory> --frames 1,7,13 --replay reverse --width 1920 --height 1080 --fidelity",
+      "reports": [
+        "cli-sparse-reopen-indexed.json",
+        "cli-fresh-process-forward.json",
+        "cli-fresh-process-random.json"
+      ],
+      "result": "All three orders return 0 with three reopened disk hits/uploads, no re-encoding/evaluation and three graph-free indexed BC7 replay hits. First fresh-session identity validation may plan; warm replay cannot access Document.",
+      "fidelity": {
+        "device_to_host_bytes": 66355200,
+        "height": 1080,
+        "max_absolute_error": 0.011764712631702423,
+        "performed": true,
+        "psnr_db": 54.04307321636311,
+        "readback_scope": "two diagnostic GPU-to-host readbacks (one live reference sample and one sampled BC7 replay frame); never the hot path",
+        "readbacks": 2,
+        "replay_sample_ms": 173.129762,
+        "representation": "bc7-unorm-4x4",
+        "rmse": 0.001985392327296513,
+        "rmse_tolerance": 0.02,
+        "samples_rgb": 6220800,
+        "tolerance_scope": "BC7-loss tolerance on the sampled display levels; the live reference and the cached replay go through the same production presentation module, so the measured difference is the compressed representation's loss alone",
+        "width": 1920,
+        "within_declared_tolerance": true
+      }
+    },
+    "raw_rgba_fidelity": {
+      "metrics": "bc7-rgba-fidelity.json",
+      "image": "bc7-rgba-fidelity.png",
+      "raster": [
+        65,
+        21
+      ],
+      "maximum_absolute_error_rgba": 0.02196076512336731,
+      "rmse_rgba": 0.005615234761750956,
+      "per_channel_maximum_error": [
+        0.02196076512336731,
+        0.02196076512336731,
+        0.02196076512336731,
+        0.005602240562438965
+      ],
+      "absolute_tolerance_rgba": 0.08,
+      "capture": "Production GPU BC7 encode, compressed readback and upload, independent diagnostic texelFetch to RGBA32F readback. Captured from the passing odd-raster regression through a throwaway instrumented binary outside the repository. Atlas uses nearest-neighbour 8x expansion; RGB is opaque and alpha shown separately, with no viewing transform."
+    },
+    "format": {
+      "tool": "clang-format-18 --dry-run --Werror",
+      "owned_cpp_hpp_files": 38,
+      "result": "passed; overlapping files retain unrelated user hunks"
+    }
+  },
+  "native_conformance": {
+    "reference": "issue25-prototype-reference-v1 archived ViewerPanel.qml / viewer-session.json verified[0..13], with accepted #47/#84/#85/#88/#98/#99 supersessions; exact mapping in #106 pre-edit comment.",
+    "appearance": "Existing production QML/controls unchanged. App-only full/narrow/two-destination/channel/closure captures retained alongside pre-cutover-native.png; no GUI alerts or pop-ups introduced.",
+    "cadence": {
+      "workload": "200 explicitly cached full 1920x1080 constant-color frames at requested 24 fps, RAM-retained and disk-backed; separate varied-pixel fidelity workload above.",
+      "results": {
+        "ram-retained": {
+          "population_ms": 14103,
+          "frame_rate": 24,
+          "timestamp_boundary": "GUI receipt of real destination-scoped Qt frameSwapped notifications; includes queued delivery jitter, not physical scanout",
+          "forward": {
+            "measured_fps": 23.798076923076923,
+            "min_ms": 17,
+            "max_ms": 70,
+            "bursts": 0,
+            "stalls": 3
+          },
+          "reverse": {
+            "measured_fps": 23.78949897873363,
+            "min_ms": 28,
+            "max_ms": 64,
+            "bursts": 0,
+            "stalls": 1
+          },
+          "forward_delivered": {
+            "cache_misses": 0,
+            "expected": 199,
+            "first_mismatch": "",
+            "initial_displayed_frame": 0,
+            "mismatches": 0,
+            "omissions": 0,
+            "presented": 199,
+            "repeats": 0
+          },
+          "reverse_delivered": {
+            "cache_misses": 0,
+            "expected": 199,
+            "first_mismatch": "",
+            "initial_displayed_frame": 199,
+            "mismatches": 0,
+            "omissions": 0,
+            "presented": 199,
+            "repeats": 0
+          }
+        },
+        "disk-backed": {
+          "population_ms": 15891,
+          "frame_rate": 24,
+          "timestamp_boundary": "GUI receipt of real destination-scoped Qt frameSwapped notifications; includes queued delivery jitter, not physical scanout",
+          "forward": {
+            "measured_fps": 23.80379899014186,
+            "min_ms": 34,
+            "max_ms": 51,
+            "bursts": 0,
+            "stalls": 0
+          },
+          "reverse": {
+            "measured_fps": 23.769507803121247,
+            "min_ms": 30,
+            "max_ms": 66,
+            "bursts": 0,
+            "stalls": 1
+          },
+          "forward_delivered": {
+            "cache_misses": 0,
+            "expected": 199,
+            "first_mismatch": "",
+            "initial_displayed_frame": 0,
+            "mismatches": 0,
+            "omissions": 0,
+            "presented": 199,
+            "repeats": 0
+          },
+          "reverse_delivered": {
+            "cache_misses": 0,
+            "expected": 199,
+            "first_mismatch": "",
+            "initial_displayed_frame": 199,
+            "mismatches": 0,
+            "omissions": 0,
+            "presented": 199,
+            "repeats": 0
+          }
+        }
+      },
+      "scope": "Real destination-scoped Qt frameSwapped notification receipt; not physical scanout. Approximately 23.77\u201323.80 fps, not an exact-24 or zero-timing-variation claim. Gaps over 1.5 frame intervals remain recorded.",
+      "reports": [
+        "replay-ordered-window-ram-retained.json",
+        "replay-ordered-window-disk-backed.json"
+      ]
+    },
+    "loop_seek_edit_close": {
+      "result": "passed on the real Qt/Vulkan window using a throwaway driver over the existing native fixture. Inclusive 0..3 loop presented 1,2,3,0 twice; seek to 2 and edit while playing displayed the new live green revision; blue destination stayed unchanged and rendered frame 1 after the other panel closed.",
+      "record": "native-loop-edit.json",
+      "images": [
+        "native-before-edit.png",
+        "native-after-edit.png"
+      ],
+      "pixels": {
+        "green_left": 209573,
+        "red_left": 0,
+        "blue_right": 209573
+      }
+    },
+    "working_space_pick": {
+      "result": "Native CropReformatSurface.Issue102ViewportPickSamplesTheDisplayedTarget passed",
+      "image": "picker/issue102-grade-picked.png"
+    },
+    "packaged_source": {
+      "program": "build/debug/apps/nemo-ui/nemo-ui",
+      "input": "Synthetic 200-frame 1920x1080@24 FFV1 yuv444p bt709-limited clip",
+      "result": "Normal packaged app presented real source frames 0..7 through Qt at Half resolution.",
+      "record": "packaged-source-smoke.json",
+      "shutdown": "Benchmark app.quit met the existing dirty-project close path; only this smoke process was stopped (143). Clean automatic packaged exit is not claimed. Native fixture closure passed separately."
+    },
+    "pipeline_html": "docs/render-pipeline.html rendered in Chromium; both lanes, presentation handoff and writer readable, no horizontal overflow at 1400px."
+  },
+  "review": {
+    "Standards": "No remaining blockers; final cache-result comment and stale metadata-copy assertions removed.",
+    "Spec": "No remaining actionable code findings; consumer metadata rebinding and first/indexed replay regression reviewed. Native timing and pre-existing sanitizer limits remain explicit, not waived."
+  },
+  "remaining_limits": [
+    "User explicitly deferred Qt callback timing investigation to the next session; no further jitter tuning or measurement campaign.",
+    "Known colorimetry full-suite failure remains untouched.",
+    "Native sanitizer exit remains non-clean due to the recorded Qt/Wayland leaks and one instrumented callback-timing assertion.",
+    "Linux/GTX1070 evidence only; no Windows, universal device, physical scanout or broad #16 performance claim.",
+    "Owner image/API review and broader #14/#97/#95 gates remain open; no push, merge or issue closure."
+  ]
+}

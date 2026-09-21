@@ -98,8 +98,6 @@ protected:
         runtime = std::make_unique<nemo::ui::ViewerRuntime>();
         nemo::eval::ViewerCacheOptions options;
         options.directory = directory.filePath("cache").toStdString();
-        options.encoding.codec = "libx264-cpu";
-        options.chunkFrames = 1;
         std::vector<std::string> extensions{"VK_KHR_surface"};
         extensions.push_back(QGuiApplication::platformName() == "wayland" ? "VK_KHR_wayland_surface"
                                                                           : "VK_KHR_xcb_surface");

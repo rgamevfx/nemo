@@ -188,10 +188,6 @@ ColumnLayout {
         return key;
     }
 
-    function ownsKey(key) {
-        return paramRows[key] !== undefined;
-    }
-
     // --- shared key and exposure affordances --------------------------------
     // A consumed parameter has no generic row left, so the editor states those
     // same cells itself through the SAME shared owners: the label cell carries
@@ -300,9 +296,14 @@ ColumnLayout {
         return cropEditor.panel ? cropEditor.panel.cancelScrub(token) : false;
     }
 
-    // The most recent rejected edit attributed to one of the consumed keys. The
-    // message comes from the controller/catalog; this editor never re-validates.
-    readonly property string gestureProblem: cropEditor.panel && cropEditor.ownsKey(String(cropEditor.panel.gestureErrorKey)) ? String(cropEditor.panel.gestureError) : ""
+    // The most recent rejected edit attributed to ONE consumed key. The message
+    // comes from the controller/catalog; this editor never re-validates, and it
+    // hands it to that field's own error affordance instead of printing it.
+    function keyProblem(key) {
+        if (!cropEditor.panel || String(cropEditor.panel.gestureErrorKey) !== String(key))
+            return "";
+        return String(cropEditor.panel.gestureError);
+    }
 
     property string selectedPreset: ""
     readonly property var formats: {
@@ -441,10 +442,9 @@ ColumnLayout {
                     value: cropEditor.displayValue(fieldRow.fieldKey)
                     hasMinimum: false
                     hasMaximum: false
-                    hasSoftMinimum: false
-                    hasSoftMaximum: false
                     step: fieldRow.fieldParameter ? Number(fieldRow.fieldParameter.step || 1) : 1
                     label: cropEditor.labelFor(fieldRow.fieldKey)
+                    errorText: cropEditor.keyProblem(fieldRow.fieldKey)
                     dragThreshold: cropEditor.dragThreshold
                     fieldWidth: 62
                     Layout.fillWidth: true
@@ -501,19 +501,22 @@ ColumnLayout {
             readonly property string parameterKey: "softness"
             readonly property string rowLabel: "Softness"
             readonly property real numberValue: cropEditor.numberValue("softness")
-            readonly property bool hasMinimum: true
-            readonly property bool hasMaximum: false
-            readonly property real minimum: 0
-            readonly property real maximum: 0
-            readonly property bool hasSoftMinimum: true
-            readonly property bool hasSoftMaximum: true
-            readonly property real softMinimum: 0
-            readonly property real softMaximum: 100
-            readonly property real numberStep: 1
+            // Bounds and navigation travel come from the schema for this key, so
+            // the control states no bound policy of its own.
+            readonly property var metadata: cropEditor.paramRow("softness") || null
+            readonly property bool hasMinimum: metadata !== null && metadata.minimum !== undefined
+            readonly property bool hasMaximum: metadata !== null && metadata.maximum !== undefined
+            readonly property real minimum: softnessRow.hasMinimum ? Number(metadata.minimum) : 0
+            readonly property real maximum: softnessRow.hasMaximum ? Number(metadata.maximum) : 0
+            readonly property bool hasSoftMinimum: metadata !== null && metadata.softMinimum !== undefined
+            readonly property bool hasSoftMaximum: metadata !== null && metadata.softMaximum !== undefined
+            readonly property real softMinimum: softnessRow.hasSoftMinimum ? Number(metadata.softMinimum) : 0
+            readonly property real softMaximum: softnessRow.hasSoftMaximum ? Number(metadata.softMaximum) : 0
+            readonly property real numberStep: metadata !== null && metadata.step !== undefined ? Number(metadata.step) : 1
             readonly property int decimals: -1
             readonly property bool integerParameter: false
             readonly property int dragThreshold: cropEditor.dragThreshold
-            readonly property string rowError: cropEditor.panel && cropEditor.panel.gestureErrorKey === "softness" ? cropEditor.gestureProblem : ""
+            readonly property string rowError: cropEditor.keyProblem("softness")
             function rowRef() { return cropEditor.rowFor("softness"); }
             function commitText(text) { return cropEditor.commitText("softness", text); }
             function commitDiscrete(value) { return cropEditor.commitValue("softness", value); }
@@ -560,17 +563,5 @@ ColumnLayout {
                 background: Rectangle { color: flag.hovered ? cropEditor.hoverColor : "transparent"; radius: 2 }
             }
         }
-    }
-
-    Text {
-        objectName: "cropBoxError_" + cropEditor.nodeId
-        visible: cropEditor.gestureProblem.length > 0
-        Layout.fillWidth: true
-        text: cropEditor.gestureProblem
-        color: cropEditor.errorColor
-        font.pixelSize: cropEditor.smallFontSize
-        elide: Text.ElideRight
-        wrapMode: Text.WordWrap
-        Accessible.name: cropEditor.gestureProblem
     }
 }

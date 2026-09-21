@@ -88,18 +88,23 @@ struct RotoParameters {
 [[nodiscard]] inline RotoParameters effectiveRoto(const NodeCatalog& catalog, const NodeInstance& node,
                                                   const ParameterValues& effectiveParams) {
     RotoParameters params;
+    // A shutter is an exposure LENGTH: zero closes it, and any longer exposure
+    // is a legal authored value (issue #103). A negative length is refused
+    // because the symmetric uniform-midpoint rule selects the identical sample
+    // set for `-s`, so the sign is not a distinct effect.
     params.shutter = effectiveNumber(catalog, node, effectiveParams, "shutter");
-    if (!(params.shutter >= 0.0F) || !(params.shutter <= 1.0F)) {
-        failNode(node, "parameter 'shutter' must be within [0, 1] frames, got " + std::to_string(params.shutter));
+    if (!(params.shutter >= 0.0F)) {
+        failNode(node, "parameter 'shutter' must not be negative, got " + std::to_string(params.shutter));
     }
     params.samples = rotoInteger(catalog, node, effectiveParams, "samples");
     if (params.samples < 1 || params.samples > 64) {
         failNode(node, "parameter 'samples' must be within [1, 64], got " + std::to_string(params.samples));
     }
+    // Opacity is a plain matte multiplier on both executors, applied AFTER the
+    // hierarchy fold, so it has no coverage-algebra domain to stay inside and
+    // no bound of its own (issue #103): only the finite, float-representable
+    // requirement of `effectiveNumber` remains.
     params.opacity = effectiveNumber(catalog, node, effectiveParams, "opacity");
-    if (!(params.opacity >= 0.0F) || !(params.opacity <= 1.0F)) {
-        failNode(node, "parameter 'opacity' must be within [0, 1], got " + std::to_string(params.opacity));
-    }
     params.outputChannel = effectiveText(catalog, node, effectiveParams, "outputChannel");
     if (params.outputChannel.empty()) {
         failNode(node, "parameter 'outputChannel' must name a channel (an empty name has no target to write)");

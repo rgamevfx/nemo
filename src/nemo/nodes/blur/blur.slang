@@ -2,7 +2,7 @@
 // module per issue #83)
 // ---------------------------------------------------------
 // name: blur (pass 2 of 2: vertical support + final result)
-// version: 2
+// version: 3
 // ports:
 //   - in_scratch : image2D input (intermediate written by blurHorizontal)
 //   - in_main : image2D input (original main image, for the mask/mix blend)
@@ -37,7 +37,9 @@
 //
 // The identity selection (size 0) runs this same program with the original
 // main image bound to the scratch slot: the blur.x <= 0 branch never reads
-// it, so size 0 is an exact, single-pass identity.
+// it, so size 0 is an exact, single-pass identity. A nonzero size has no
+// authored maximum (issue #103): it uses the checked, representable support and
+// the normalized weights the preparation computed for that exact radius.
 
 #include "../GpuGeometry.slang"
 
@@ -163,10 +165,13 @@ void main(uint3 tid : SV_DispatchThreadID)
                        : 0.0;
         coverage = mask.y > 0.5 ? 1.0 - selected : selected;
     }
-    // Endpoints are exact: weight 0 keeps the original, weight 1 the fully
-    // processed pixel (avoids HDR 0*inf cancellation in lerp()).
+    // Only the exact endpoints are special-cased: weight 0 keeps the original
+    // and weight 1 the fully processed pixel, so no HDR 0*inf cancellation
+    // occurs in lerp(). Every other finite weight — including the extrapolation
+    // an authored Mix outside [0, 1] produces — is the same lerp the shared CPU
+    // blend computes (EffectCpu.hpp blendEffectOutput).
     float weight = coverage * mask.z;
-    float4 result = weight <= 0.0 ? orig : (weight >= 1.0 ? processed : lerp(orig, processed, weight));
+    float4 result = weight == 0.0 ? orig : (weight == 1.0 ? processed : lerp(orig, processed, weight));
     // Every stored channel the blur did not filter keeps its named channel from the
     // original main image at the same coordinate (issue #90).
     gpuStorePixel(out_color, int2(p), planeHeight, channels.x, channels.y, channels.z, rgba, result, in_main,

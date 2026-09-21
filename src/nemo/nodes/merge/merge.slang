@@ -3,7 +3,7 @@
 // owner-approved A/B role correction per issue #78, 2026-09-19)
 // ---------------------------------------------------------
 // name: merge
-// version: 4
+// version: 5
 // ports:
 //   - in_a : image2D input, port A (foreground / source)
 //   - in_b : image2D input, port B (background / base and main pipe)
@@ -172,9 +172,13 @@ void main(uint3 tid : SV_DispatchThreadID)
         coverage = mask.y > 0.5 ? 1.0 - selected : selected;
     }
     // Endpoints are exact: weight 0 keeps the background, weight 1 the
-    // unmasked composite, so Mix 0 or zero coverage returns the background.
+    // unmasked composite, so Mix 0 or zero coverage returns the background. The
+    // comparisons are equality, never `<= 0`/`>= 1`: a clamp there would
+    // saturate an extrapolating Mix (issue #103) and disagree with the CPU
+    // seam, which blends `background + (composite - background) * weight` for
+    // every finite weight.
     float weight = coverage * mask.z;
-    float4 result = weight <= 0.0 ? bg : (weight >= 1.0 ? composite : lerp(bg, composite, weight));
+    float4 result = weight == 0.0 ? bg : (weight == 1.0 ? composite : lerp(bg, composite, weight));
     // The background B is this node's main input (binding 0): every stored
     // channel the composite did not write keeps its named channel from B at
     // the same coordinate (#90).

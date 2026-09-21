@@ -5,6 +5,8 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
+#include <limits>
 #include <string>
 #include <utility>
 #include <vector>
@@ -20,10 +22,14 @@ NodeDescriptor blurDescriptor() {
     return NodeDescriptor{.type = "blur",
                           .displayName = "Blur",
                           .group = "Blur",
+                          // 3: `size` lost its arbitrary 100 hard maximum — the
+                          // declared radius is executed exactly and only an
+                          // unrepresentable tap count is refused, and Mix's hard
+                          // range became slider travel (issue #103).
                           // 2: the adapter consumes the resolved image description
                           // for its output raster and tolerates an empty input
                           // data window (issue #88).
-                          .implementationVersion = 2,
+                          .implementationVersion = 3,
                           .inputs = effectImageInputs(),
                           .outputs = {{PortKind::Image, "out"}},
                           .parameters = withMaskParameters({
@@ -40,12 +46,18 @@ NodeDescriptor blurDescriptor() {
                               {.name = "size",
                                .type = ParameterType::Float,
                                .defaultValue = ParameterValue{0.0},
+                               // A radius is nonnegative by meaning; it has no
+                               // upper hard bound (issue #103). 0..100 stays the
+                               // slider's navigation travel only: an authored
+                               // value beyond it is executed exactly, never
+                               // clipped or rewritten.
                                .minimum = 0.0,
-                               .maximum = 100.0,
                                .step = 0.1,
                                .label = "Size",
                                .section = "Blur",
-                               .editor = {}},
+                               .editor = {},
+                               .softMinimum = 0.0,
+                               .softMaximum = 100.0},
                               mixParameterSpec("Blur"),
                           }),
                           .capabilities = builtinCapabilities()};
@@ -53,10 +65,6 @@ NodeDescriptor blurDescriptor() {
 
 // Blur selects channels with the same bitmask Grade uses (R1/G2/B4/A8).
 constexpr std::array<std::uint32_t, kImageChannels> kChannelBits{1U, 2U, 4U, 8U};
-
-[[nodiscard]] bool isFinite(float value) {
-    return std::isfinite(value);
-}
 
 [[nodiscard]] int clampIndex(int value, int limit) {
     return std::clamp(value, 0, limit - 1);
@@ -67,26 +75,29 @@ struct BlurKernel {
     std::vector<float> weights;
 };
 
-// `size` is a full-resolution support radius; the raster the kernel works on is
-// sampled at `request.samplingScale`, so weights use full-resolution distances
-// while taps advance in raster pixels. The kernel is normalized per axis and
-// computed once per node evaluation.
-[[nodiscard]] BlurKernel makeBlurKernel(int samplingScale, float sizePixels) {
+// The kernel the node's own raster is filtered with: the checked, representable
+// tap count (`blurSupportAt`) and the weights this reference computes for
+// itself. `size` is a full-resolution support radius while the raster samples at
+// `samplingScale`, so weights use full-resolution distances as taps advance in
+// raster pixels. Distances and the normalization are evaluated in double — the
+// declared math — because a float sigma underflows below the float normal range
+// and would turn the weights into NaN. The native preparation computes the same
+// declared weights in its own code (blur/Gpu.cpp), so neither reference is the
+// other's oracle.
+[[nodiscard]] BlurKernel makeBlurKernel(int support, int samplingScale, float sizePixels) {
     BlurKernel kernel;
-    const float sigma = sizePixels / 3.0F;
-    kernel.support = static_cast<int>(std::ceil(sizePixels / static_cast<float>(samplingScale)));
-    kernel.weights.resize(2 * static_cast<std::size_t>(kernel.support) + 1);
-    float sum = 0.0F;
-    for (int tap = -kernel.support; tap <= kernel.support; ++tap) {
-        const float distance = static_cast<float>(tap * samplingScale) / sigma;
-        const float weight = std::exp(-0.5F * distance * distance);
-        // effectiveBlur bounds support to [0, 100], so this index is within [0, 200].
-        // NOLINTNEXTLINE(bugprone-misplaced-widening-cast): bounded index
-        kernel.weights[static_cast<std::size_t>(tap + kernel.support)] = weight;
+    kernel.support = support;
+    const double sigma = static_cast<double>(sizePixels) / 3.0;
+    kernel.weights.resize(static_cast<std::size_t>(2) * static_cast<std::size_t>(support) + 1, 1.0F);
+    double sum = 0.0;
+    for (int tap = -support; tap <= support; ++tap) {
+        const double distance = static_cast<double>(tap) * samplingScale / sigma;
+        const double weight = std::exp(-0.5 * distance * distance);
+        kernel.weights[static_cast<std::size_t>(tap + support)] = static_cast<float>(weight);
         sum += weight;
     }
     for (float& weight : kernel.weights) {
-        weight /= sum;
+        weight = static_cast<float>(static_cast<double>(weight) / sum);
     }
     return kernel;
 }
@@ -106,9 +117,6 @@ struct BlurKernel {
                                  const InputAnchor& anchor) {
     const NodeInstance& node = context.node;
     const EvaluationRequest& request = context.request;
-    if (!isFinite(params.size) || params.size < 0.0F) {
-        failNode(node, "parameter 'size' must be finite and nonnegative");
-    }
     if (!isSamplingScale(request.samplingScale)) {
         failNode(node, "sampling scale " + std::to_string(request.samplingScale) +
                            " is not a declared reduction (supported scales: 1, 2, 4)");
@@ -131,7 +139,15 @@ struct BlurKernel {
         }
         return windowOf(input, anchor, effectRasterLayout(context));
     }
-    const BlurKernel kernel = makeBlurKernel(scale, params.size);
+    const int support = blurSupportAt(node, params.size, scale);
+    // Owner-approved CPU-reference resource exception (#103), not an authored
+    // radius or image-memory limit. Native preparation uses the device's range.
+    constexpr std::uint64_t kMaxReferenceWeightBytes = 64U * 1024U * 1024U;
+    const auto weightCount = static_cast<std::uint64_t>(support) * 2 + 1;
+    if (weightCount > kMaxReferenceWeightBytes / sizeof(float)) {
+        failNode(node, "parameter 'size' requires a weight table exceeding the CPU reference's 64 MiB budget");
+    }
+    const BlurKernel kernel = makeBlurKernel(support, scale, params.size);
 
     std::array<bool, kImageChannels> filtered{};
     for (std::size_t channel = 0; channel < kImageChannels; ++channel) {
@@ -212,7 +228,8 @@ struct BlurKernel {
                             alphaSourceIndex >= 0) {
                             value *= source[tapBase + static_cast<std::size_t>(alphaSourceIndex)];
                         }
-                        // effectiveBlur bounds support to [0, 100], so this index is within [0, 200].
+                        // `support` is the checked, representable tap count
+                        // (blurSupportAt), so this index is within [0, 2*support].
                         // NOLINTNEXTLINE(bugprone-misplaced-widening-cast): bounded index
                         sum += kernel.weights[static_cast<std::size_t>(tap + kernel.support)] * value;
                     }
@@ -300,9 +317,19 @@ std::vector<InputRequirement> blurInputRequirements(const NodeRegionContext& con
     const BlurParameters params = effectiveBlur(context.catalog, context.node, context.effectiveParams);
     const EvaluationRequest& request = context.request;
     const int scale = isSamplingScale(request.samplingScale) ? request.samplingScale : 1;
-    const int radius = static_cast<int>(std::ceil(params.size / static_cast<float>(scale))) * scale;
-    const Region halo{request.region.x - radius, request.region.y - radius, request.region.width + 2 * radius,
-                      request.region.height + 2 * radius};
+    // Widen before expanding the demand. Refuse only a halo the Region contract
+    // cannot represent; a large authored radius is not a navigation limit.
+    const std::int64_t radius = static_cast<std::int64_t>(blurSupportAt(context.node, params.size, scale)) * scale;
+    const std::int64_t x = static_cast<std::int64_t>(request.region.x) - radius;
+    const std::int64_t y = static_cast<std::int64_t>(request.region.y) - radius;
+    const std::int64_t width = static_cast<std::int64_t>(request.region.width) + 2 * radius;
+    const std::int64_t height = static_cast<std::int64_t>(request.region.height) + 2 * radius;
+    constexpr auto low = std::numeric_limits<int>::min();
+    constexpr auto high = std::numeric_limits<int>::max();
+    if (x < low || y < low || width > high || height > high || x + width > high || y + height > high) {
+        failNode(context.node, "parameter 'size' needs a halo outside the integer region representation");
+    }
+    const Region halo{static_cast<int>(x), static_cast<int>(y), static_cast<int>(width), static_cast<int>(height)};
     const Region mask = regionIntersection(request.region, requirementDomain(context, 1, request.region));
     return {InputRequirement{regionIntersection(halo, requirementDomain(context, 0, halo)), {}},
             InputRequirement{mask, {}}};

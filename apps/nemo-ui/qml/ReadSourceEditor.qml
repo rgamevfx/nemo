@@ -16,7 +16,7 @@ import QtQuick.Layouts
 ColumnLayout {
     id: readEditor
 
-    property var theme
+    property var theme: null
     property string networkId: ""
     property string instanceId: ""
     property string nodeId: ""
@@ -78,12 +78,7 @@ ColumnLayout {
     property var matrixChoices: []
     property var hintRangeChoices: []
     property var chromaChoices: []
-    // Why the schema-derived hint choices are unavailable, when the inspector
-    // query reports it: shown, never silently dropped.
-    property string hintsProblem: ""
     readonly property bool hintsAvailable: readEditor.transferChoices.length > 0 || readEditor.primariesChoices.length > 0 || readEditor.matrixChoices.length > 0 || readEditor.hintRangeChoices.length > 0 || readEditor.chromaChoices.length > 0
-    // One local rejection message, shown next to the field that produced it.
-    property string fieldError: ""
     property bool advancedExpanded: false
 
     readonly property string state: readEditor.info && readEditor.info.state !== undefined ? String(readEditor.info.state) : "unresolved"
@@ -118,7 +113,6 @@ ColumnLayout {
         // and by the schema-derived choice lists below.
         readEditor.paramInspector = readEditor.inspectorQuery();
         readEditor.paramRows = readEditor.inspectorRows();
-        readEditor.hintsProblem = readEditor.paramInspector && readEditor.paramInspector.available === false ? String(readEditor.paramInspector.reason === undefined ? "" : readEditor.paramInspector.reason) : "";
         readEditor.assignIfChanged("transferChoices", readEditor.rowChoices("sourceTransfer"));
         readEditor.assignIfChanged("primariesChoices", readEditor.rowChoices("sourcePrimaries"));
         readEditor.assignIfChanged("matrixChoices", readEditor.rowChoices("sourceMatrix"));
@@ -156,11 +150,12 @@ ColumnLayout {
         return text.length > 0 && Number.isFinite(value) ? value : fallback;
     }
 
+    // The state label only. A rejected or failed source states itself through the
+    // viewer's own diagnostic and the controller's info/error (the owner), never
+    // as a paragraph inside the inspector, so this never prints backend text.
     function statusText() {
         if (readEditor.pending)
             return "Probing media...";
-        if (readEditor.problem.length > 0)
-            return readEditor.problem;
         if (readEditor.state === "empty")
             return "No media selected. Choose a file or type a sequence pattern.";
         if (readEditor.state === "offline")
@@ -300,14 +295,12 @@ ColumnLayout {
 
     function resetValue(key) {
         key = readEditor.parameterForField(key);
-        readEditor.fieldError = "";
         if (readEditor.panel && readEditor.panel.resetValue) {
-            if (!readEditor.panel.resetValue({
+            readEditor.panel.resetValue({
                     "networkId": readEditor.networkId,
                     "nodeId": readEditor.nodeId,
-                    "parameterKey": handle
-                }))
-                readEditor.fieldError = readEditor.gestureError();
+                    "parameterKey": key
+                });
         }
         readEditor.refresh();
     }
@@ -326,10 +319,6 @@ ColumnLayout {
     // its static companion change in ONE atomic gesture, one preview and one
     // history entry. This editor never decides keyed-vs-static itself.
     readonly property var paramController: readEditor.panel && readEditor.panel.controller ? readEditor.panel.controller : null
-
-    function gestureError() {
-        return readEditor.paramController ? String(readEditor.paramController.error) : "";
-    }
 
     // The PANEL wrappers are the entry point: they own the live token, defer a
     // document/frame refresh while a gesture is live (so nothing rebuilds this
@@ -365,7 +354,6 @@ ColumnLayout {
     // integer parameters (the core parser owns the conversion) and the chosen
     // string for choices; a refused or stale gesture changes nothing.
     function commitValues(values) {
-        readEditor.fieldError = "";
         // Aggregate value edits exist only on the DIRECT card, where the child
         // keys ARE the host handles (an occurrence exposure renders File/source
         // actions only, and the generic inspector owns its exposed rows).
@@ -374,19 +362,14 @@ ColumnLayout {
         if (keys.length === 0)
             return false;
         const token = readEditor.gestureBegin(keys);
-        if (token.length === 0) {
-            readEditor.fieldError = readEditor.gestureError();
+        if (token.length === 0)
             return false;
-        }
         if (!readEditor.gestureUpdate(token, mapped)) {
-            const message = readEditor.gestureError();
             readEditor.gestureCancel(token);
-            readEditor.fieldError = message;
             readEditor.refresh();
             return false;
         }
         if (!readEditor.gestureCommit(token)) {
-            readEditor.fieldError = readEditor.gestureError();
             readEditor.refresh();
             return false;
         }
@@ -400,13 +383,10 @@ ColumnLayout {
     property int scrubFrame: 0
 
     function scrubBegin(key) {
-        readEditor.fieldError = "";
         readEditor.scrubCancel();
         readEditor.scrubKey = key;
         readEditor.scrubFrame = readEditor.frameOf();
         readEditor.scrubToken = readEditor.gestureBegin([readEditor.parameterForField(key)]);
-        if (readEditor.scrubToken.length === 0)
-            readEditor.fieldError = readEditor.gestureError();
     }
 
     function scrubUpdate(key, valueText) {
@@ -417,8 +397,8 @@ ColumnLayout {
         if (text.length === 0)
             return;
         values[readEditor.parameterForField(key)] = text;
-        if (!readEditor.gestureUpdate(readEditor.scrubToken, values))
-            readEditor.fieldError = readEditor.gestureError();  // the preview stays valid either way
+        // A refused preview keeps the last valid one; nothing is printed.
+        readEditor.gestureUpdate(readEditor.scrubToken, values);
     }
 
     function scrubFinish(key) {
@@ -427,8 +407,7 @@ ColumnLayout {
         var token = readEditor.scrubToken;
         readEditor.scrubToken = "";
         readEditor.scrubKey = "";
-        if (!readEditor.gestureCommit(token))
-            readEditor.fieldError = readEditor.gestureError();
+        readEditor.gestureCommit(token);
         readEditor.refresh();
     }
 
@@ -566,10 +545,7 @@ ColumnLayout {
     function startAtOffsetText(value, frame) {
         if (!readEditor.readSource)
             return "";
-        const offset = readEditor.readSource.startAtOffsetValue(readEditor.queryNetwork, readEditor.queryNode, readEditor.exactText(value), frame, readEditor.instanceId);
-        if (offset.length === 0)
-            readEditor.fieldError = "Start At could not be resolved for the current range.";
-        return offset;
+        return readEditor.readSource.startAtOffsetValue(readEditor.queryNetwork, readEditor.queryNode, readEditor.exactText(value), frame, readEditor.instanceId);
     }
 
     function commitStartAt(value) {
@@ -595,7 +571,6 @@ ColumnLayout {
     }
 
     function commitInputTransform(text) {
-        readEditor.fieldError = "";
         const entry = text.trim();
         let mode = "";
         let space = "";
@@ -607,7 +582,8 @@ ColumnLayout {
             mode = "explicit";
             space = entry;
         } else {
-            readEditor.fieldError = "Unknown input transform '" + entry + "' for the project config.";
+            // An unknown entry publishes nothing: the field returns to the
+            // authored transform instead of printing a line.
             inputTransformBox.editText = readEditor.authoredInputEntry();
             return;
         }
@@ -708,6 +684,12 @@ ColumnLayout {
         dragThreshold: readEditor.dragThreshold
         fieldWidth: 60
         property string fieldName: ""
+        errorText: readEditor.panel && String(readEditor.panel.gestureErrorKey) === readEditor.parameterForField(fieldName)
+                   ? String(readEditor.panel.gestureError) : ""
+        onTextRejected: function(rejected) {
+            if (readEditor.panel)
+                readEditor.panel.rejectText({"parameterKey": readEditor.parameterForField(fieldName), "label": label}, rejected);
+        }
         // The authored value as EXACT text (never through a double), so a large
         // frame number is submitted to the core parser unchanged.
         function exactText() {
@@ -734,7 +716,6 @@ ColumnLayout {
         onStepped: function (committed) {
             readEditor.commitFor(fieldName, readEditor.exactText(committed));
         }
-        onTextRejected: readEditor.fieldError = "Enter a whole number."
         onKeyRequested: readEditor.keyAtFrame(fieldName)
 
         // Key/reset affordances for a consumed parameter, reachable without the
@@ -1006,13 +987,13 @@ ColumnLayout {
     RowLayout {
         Layout.fillWidth: true
         spacing: 4
-        visible: readEditor.pending || readEditor.problem.length > 0 || readEditor.state !== "ready"
+        visible: readEditor.pending || readEditor.state !== "ready"
 
         Text {
             objectName: "readSourceStatus_" + readEditor.nodeId
             Layout.fillWidth: true
             text: readEditor.statusText()
-            color: readEditor.problem.length > 0 ? readEditor.errorColor : readEditor.mutedColor
+            color: readEditor.mutedColor
             font.pixelSize: readEditor.smallFontSize
             wrapMode: Text.WordWrap
         }
@@ -1308,18 +1289,6 @@ ColumnLayout {
             text: "Interpretation hints"
         }
 
-        // The schema query failed: report the real reason rather than silently
-        // dropping controls the artist is entitled to see.
-        Text {
-            objectName: "readSourceHintsProblem_" + readEditor.nodeId
-            Layout.fillWidth: true
-            visible: !readEditor.hintsAvailable && readEditor.hintsProblem.length > 0
-            text: "Interpretation hints unavailable: " + readEditor.hintsProblem
-            color: readEditor.errorColor
-            font.pixelSize: readEditor.smallFontSize
-            wrapMode: Text.WordWrap
-        }
-
         RowLayout {
             Layout.fillWidth: true
             spacing: 4
@@ -1569,13 +1538,10 @@ ColumnLayout {
         Layout.fillWidth: true
         spacing: 4
 
-        Text {
+        // Keeps the Clear action where the alignment above put it; a rejected
+        // edit prints nothing here.
+        Item {
             Layout.fillWidth: true
-            visible: readEditor.fieldError.length > 0
-            text: readEditor.fieldError
-            color: readEditor.errorColor
-            font.pixelSize: readEditor.smallFontSize
-            wrapMode: Text.WordWrap
         }
 
         ChromeButton {

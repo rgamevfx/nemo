@@ -20,7 +20,10 @@ NodeDescriptor mergeDescriptor() {
         .displayName = "Merge",
         .group = "Compositing",
         // 4: A is foreground; B is the background and inherited main input.
-        .implementationVersion = 4,
+        // 5: Mix declares no hard range (issue #103): the slider travel is a
+        // soft interaction hint, and an extrapolating authored factor is stored
+        // and blended exactly.
+        .implementationVersion = 5,
         .inputs = {{PortKind::Image, "A", false}, {PortKind::Image, "B", false}, {PortKind::Mask, "mask", true}},
         .mainInput = 1,
         .outputs = {{PortKind::Image, "out"}},
@@ -31,14 +34,18 @@ NodeDescriptor mergeDescriptor() {
                         .label = "Operation",
                         .section = "Composite",
                         .editor = "nemo.merge.operation"},
+                       // Mix declares no hard range (issue #103): it is the
+                       // blend weight of `background + (composite - background)
+                       // * mix`, defined for every finite factor, so 0..1 is
+                       // the useful slider travel rather than a validity rule.
                        {.name = "mix",
                         .type = ParameterType::Float,
                         .defaultValue = ParameterValue{1.0},
-                        .minimum = 0.0,
-                        .maximum = 1.0,
                         .label = "Mix",
                         .section = "Composite",
-                        .editor = {}},
+                        .editor = {},
+                        .softMinimum = 0.0,
+                        .softMaximum = 1.0},
                        {.name = "maskChannel",
                         .type = ParameterType::Choice,
                         .defaultValue = ParameterValue{ChoiceValue{"A"}},

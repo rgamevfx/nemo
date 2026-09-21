@@ -197,10 +197,13 @@ void main() {
                        : 0.0;
         coverage = mask.y > 0.5 ? 1.0 - selected : selected;
     }
-    // Endpoints are exact: weight 0 keeps the original, weight 1 the fully
-    // processed pixel (avoids HDR 0*inf cancellation in mix()).
+    // Only the exact endpoints are special-cased: weight 0 keeps the original
+    // and weight 1 the fully processed pixel, so no HDR 0*inf cancellation
+    // occurs in mix(). Every other finite weight — including the extrapolation
+    // an authored Mix outside [0, 1] produces — is the same lerp the shared CPU
+    // blend computes (EffectCpu.hpp blendEffectOutput).
     float weight = coverage * mask.z;
-    vec4 result = weight <= 0.0 ? orig : (weight >= 1.0 ? processed : mix(orig, processed, weight));
+    vec4 result = weight == 0.0 ? orig : (weight == 1.0 ? processed : mix(orig, processed, weight));
     // Every stored channel the blur did not filter keeps its named channel from the
     // original main image at the same coordinate (issue #90).
     gpuStorePixel(out_color, ivec2(p), planeHeight, channels.x, channels.y, channels.z, rgba, result, in_main,
@@ -248,14 +251,18 @@ void main() {
     };
 }
 
-// Normalized separable Gaussian weights: size is the full-res support radius,
-// sigma = size/3, and raster sample i sits at full-res offset i*scale.
+// Normalized separable Gaussian weights for the native preparation: size is the
+// full-resolution support radius, sigma = size/3, and raster sample i sits at
+// full-resolution offset i*scale. Distances and the normalization are evaluated
+// in double here (a float sigma underflows for radii below the float normal
+// range and would produce NaN weights), independently of the CPU reference's own
+// computation in Contribution.cpp makeBlurKernel.
 [[nodiscard]] std::vector<float> blurWeights(double size, int scale, int support) {
-    std::vector<float> weights(static_cast<std::size_t>(2 * support + 1), 1.0F);
+    std::vector<float> weights(static_cast<std::size_t>(2) * static_cast<std::size_t>(support) + 1, 1.0F);
     const double sigma = size / 3.0;
     double total = 0.0;
     for (int i = -support; i <= support; ++i) {
-        const double weight = std::exp(-0.5 * std::pow(static_cast<double>(i * scale) / sigma, 2.0));
+        const double weight = std::exp(-0.5 * std::pow(static_cast<double>(i) * scale / sigma, 2.0));
         weights[static_cast<std::size_t>(i + support)] = static_cast<float>(weight);
         total += weight;
     }
@@ -291,8 +298,14 @@ void main() {
     payload.blur[0] = blur.size;
     payload.blur[1] = static_cast<float>(blur.channels);
     // Raster support: size is a full-resolution radius, so a reduced raster
-    // needs ceil(size/samplingScale) taps per axis.
-    payload.blur[2] = static_cast<float>(static_cast<int>(std::ceil(blur.size / static_cast<float>(scale))));
+    // needs ceil(size/samplingScale) taps per axis. The payload word is a float,
+    // which is exactly why the checked support stays representable there.
+    const int support = blurSupportAt(context.node, blur.size, scale);
+    const auto weightCount = static_cast<std::uint64_t>(support) * 2 + 1;
+    if (weightCount > context.maxStorageBufferBytes / sizeof(float)) {
+        failNode(context.node, "parameter 'size' requires weights exceeding the device storage-buffer limit");
+    }
+    payload.blur[2] = static_cast<float>(support);
 
     GpuPreparation preparation;
     preparation.payload = effectPayload(payload);
@@ -302,7 +315,6 @@ void main() {
         preparation.weights = {1.0F};
         preparation.passes = {2u};
     } else {
-        const int support = static_cast<int>(payload.blur[2]);
         preparation.weights = blurWeights(static_cast<double>(blur.size), scale, support);
         preparation.passes = {0u, 1u};
         const Region& request = context.request.region;

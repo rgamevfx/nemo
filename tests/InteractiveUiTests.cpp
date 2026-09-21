@@ -1933,8 +1933,6 @@ TEST(Interactive, NodeInputOccupancyGuardsTheAtomicSwap) {
 }
 
 // Issue #75 stories 9/42: soft presentation travel never replaces a semantic
-// constraint, and a generic parameter edit cannot author an invalid mapping.
-// Issue #75 stories 9/42: soft presentation travel never replaces a semantic
 // constraint, a generic parameter edit cannot author an invalid mapping, and
 // the gesture guard rejects what the executor would reject while preserving
 // state.
@@ -1950,13 +1948,11 @@ TEST(Interactive, SemanticBoundsStayAuthoritativeWhilePresentationTravelIsSoft) 
     EXPECT_NO_THROW(graph.setParam(transform, "translateX", nemo::ParameterValue{-1500.0}));
     EXPECT_NO_THROW(graph.setParam(transform, "translateX", nemo::ParameterValue{4096.0}));
     EXPECT_NO_THROW(graph.setParam(transform, "rotate", nemo::ParameterValue{-720.0}));
-    // Scale is positive and finite: zero is rejected by the catalog's nonzero
-    // constraint and a typed out-of-domain value is rejected by the executor's
-    // own admissibility owner before publication.
+    // A finite nonzero scale may mirror the image; zero has no inverse mapping.
     EXPECT_THROW(graph.setParam(transform, "scale", nemo::ParameterValue{0.0}), nemo::GraphException);
-    EXPECT_NO_THROW(graph.setParam(transform, "scale", nemo::ParameterValue{4.0}));
-    // Mix stays a bounded 0..1 control.
-    EXPECT_THROW(graph.setParam(transform, "mix", nemo::ParameterValue{2.0}), nemo::GraphException);
+    graph.setParam(transform, "scale", nemo::ParameterValue{-4.0});
+    // Mix can extrapolate; its 0..1 slider travel is not a legal-value bound.
+    graph.setParam(transform, "mix", nemo::ParameterValue{2.0});
     // A zero source step would create an invalid mapping; the catalog's nonzero
     // constraint rejects it on the generic edit rather than at evaluation.
     EXPECT_THROW(graph.setParam(read, "frameStep", nemo::ParameterValue{std::int64_t{0}}), nemo::GraphException);
@@ -1965,6 +1961,7 @@ TEST(Interactive, SemanticBoundsStayAuthoritativeWhilePresentationTravelIsSoft) 
     // The inspector publishes the exact authored text so an Integer edit never
     // round-trips through a JavaScript double.
     nemo::ProjectSession session(std::move(document));
+    EXPECT_EQ(session.queryValues(network, transform, "mix").front().value, nemo::ParameterValue{2.0});
     nemo::ui::ViewerRuntime runtime;
     nemo::ui::ParameterInteraction interaction;
     nemo::ui::ViewerController controller(&runtime, session, interaction);
@@ -1982,13 +1979,13 @@ TEST(Interactive, SemanticBoundsStayAuthoritativeWhilePresentationTravelIsSoft) 
     const auto rejected = controller.beginNodeParameterEdit(QString::number(network), QString::number(transform),
                                                             QStringLiteral("scale"));
     ASSERT_FALSE(rejected.isEmpty()) << controller.error().toStdString();
-    EXPECT_FALSE(controller.updateNodeParameterEdit(rejected, -1.0));
+    EXPECT_FALSE(controller.updateNodeParameterEdit(rejected, 0.0));
     EXPECT_FALSE(controller.error().isEmpty());
     EXPECT_FALSE(controller.commitNodeParameterEdit(rejected));
     EXPECT_EQ(session.revision(), guardRevision);
     const auto scaleValues = session.queryValues(network, transform, "scale");
     ASSERT_FALSE(scaleValues.empty());
-    EXPECT_EQ(scaleValues.front().value, nemo::ParameterValue{4.0});
+    EXPECT_EQ(scaleValues.front().value, nemo::ParameterValue{-4.0});
 
     const auto accepted = controller.beginNodeParameterEdit(QString::number(network), QString::number(transform),
                                                             QStringLiteral("scale"));

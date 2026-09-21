@@ -12,14 +12,15 @@ import QtQuick
 //                   gesture the session handed to another control: publish
 //                   nothing
 //
-// A press seeks the value under the pointer. Beginning the host gesture retires
-// whatever interaction the session was running first, so a press always owns
-// the next one. If the host does not grant it (`gestureLive` stays false) or
+// A track press seeks; a handle press keeps the exact value until it moves.
+// Beginning the host gesture retires the previous interaction, so the press
+// owns the next one. If the host does not grant it (`gestureLive` stays false) or
 // retires it mid-drag, the handle returns to the authored value at once and
 // neither renewed motion nor the release can publish the abandoned preview.
 // `graduated` adds a linear ruler with tick labels and `markers` places the
 // per-channel positions of an expanded tuple; both are linear divisions of
-// [from, to] and imply no transfer function.
+// navigation travel and imply no transfer function. Travel includes an authored
+// out-of-range value and is frozen during dragging, never clamping on refresh.
 Item {
     id: slider
 
@@ -40,7 +41,9 @@ Item {
     signal editCancelled()
     signal keyRequested()
 
-    readonly property real travel: Math.max(0, to - from)
+    readonly property real navigationFrom: scrubbing ? scrubFrom : Math.min(from, value)
+    readonly property real navigationTo: scrubbing ? scrubTo : Math.max(to, value)
+    readonly property real travel: Math.max(0, navigationTo - navigationFrom)
     readonly property int handleSize: 12
     readonly property int padding: 6
     readonly property real trackWidth: Math.max(1, width - 2 * padding)
@@ -57,6 +60,8 @@ Item {
     property bool scrubbing: false
     property real scrubOrigin: 0
     property real scrubPreview: 0
+    property real scrubFrom: 0
+    property real scrubTo: 1
     property bool scrubAbandoned: false
 
     implicitWidth: 120
@@ -72,7 +77,7 @@ Item {
     }
 
     function positionFor(candidate) {
-        return travel <= 0 ? 0 : clampUnit((candidate - from) / travel);
+        return travel <= 0 ? 0 : clampUnit((candidate - navigationFrom) / travel);
     }
 
     // Center of the handle for a value; the one mapping ticks, markers, the
@@ -82,20 +87,28 @@ Item {
     }
 
     function snapped(candidate) {
-        var bounded = Math.min(to, Math.max(from, candidate));
+        var bounded = Math.min(navigationTo, Math.max(navigationFrom, candidate));
         if (!(stepSize > 0) || travel <= 0)
             return bounded;
-        return Math.min(to, Math.max(from, from + Math.round((bounded - from) / stepSize) * stepSize));
+        return Math.min(navigationTo, Math.max(navigationFrom, from + Math.round((bounded - from) / stepSize) * stepSize));
     }
 
     function valueAt(x) {
-        return snapped(from + clampUnit((x - padding - handleSize / 2) / handleTravel) * travel);
+        return snapped(navigationFrom + clampUnit((x - padding - handleSize / 2) / handleTravel) * travel);
     }
 
     function seek(x) {
         if (!scrubbing || scrubAbandoned || !gestureLive)
             return;
-        var candidate = valueAt(x);
+        var candidate;
+        if (gesture.handlePress) {
+            var delta = (x - gesture.pressX) / handleTravel * travel;
+            if (stepSize > 0)
+                delta = Math.round(delta / stepSize) * stepSize;
+            candidate = Math.min(navigationTo, Math.max(navigationFrom, scrubOrigin + delta));
+        } else {
+            candidate = valueAt(x);
+        }
         scrubPreview = candidate;
         valueEdited(candidate);
     }
@@ -120,7 +133,7 @@ Item {
         var step = multiplier * magnitude;
         var decimals = Math.max(0, Math.ceil(-Math.log(step) / Math.LN10));
         var result = [];
-        for (var tick = Math.ceil(from / step) * step; tick <= to + step * 1e-6 && result.length < 64; tick += step) {
+        for (var tick = Math.ceil(navigationFrom / step) * step; tick <= navigationTo + step * 1e-6 && result.length < 64; tick += step) {
             var rounded = Math.abs(tick) < step * 1e-6 ? 0 : tick;
             result.push({
                     "value": rounded,
@@ -158,7 +171,7 @@ Item {
         model: slider.graduated ? Math.max(1, Math.floor(slider.handleTravel / 8)) : 0
         delegate: Rectangle {
             required property int index
-            x: slider.centerXFor(slider.from) + (index + 0.5) * slider.handleTravel / minorTicks.count
+            x: slider.centerXFor(slider.navigationFrom) + (index + 0.5) * slider.handleTravel / minorTicks.count
             y: groove.y + 2
             width: 1
             height: 4
@@ -221,6 +234,8 @@ Item {
     MouseArea {
         id: gesture
         property bool altPress: false
+        property real pressX: 0
+        property bool handlePress: false
         anchors.fill: parent
         acceptedButtons: Qt.LeftButton
         enabled: slider.enabled
@@ -231,6 +246,10 @@ Item {
             slider.scrubAbandoned = false;
             slider.scrubOrigin = slider.value;
             slider.scrubPreview = slider.value;
+            pressX = mouse.x;
+            handlePress = Math.abs(mouse.x - slider.centerXFor(slider.value)) <= slider.handleSize / 2;
+            slider.scrubFrom = slider.navigationFrom;
+            slider.scrubTo = slider.navigationTo;
             slider.scrubbing = true;
             slider.editStarted();
             slider.seek(mouse.x);

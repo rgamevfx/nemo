@@ -764,6 +764,50 @@ TEST_F(ReadViewerSurface, PngSelectedInReadAppearsInItsAttachedViewer) {
     EXPECT_EQ(warnings_->count(), 0);
 }
 
+TEST_F(ReadViewerSurface, ReadTimingRejectionsKeepGeometryAndExactIntegerAuthoring) {
+    const auto scope = rootNetwork();
+    const auto png = writePng(directory_.path().toStdString(), "timing", 8, 8, {0.25F, 0.5F, 0.75F, 1.0F});
+    const auto read = facade_->createGraphNode(scope, "source", "ReadTiming", 0, 0, {}, {});
+    ASSERT_FALSE(read.isEmpty());
+    ASSERT_TRUE(readSource_->setSourcePath(scope, read, QString::fromStdString(png.string())));
+    ASSERT_TRUE(waitFor([&] { return readSource_->info(scope, read).value("state").toString() == "ready"; }));
+    workspace_->addTab("leaf-a", "parameters");
+    QTest::qWait(50);
+    ASSERT_TRUE(router_->requestInspector("A", scope, read));
+    const auto fieldName = "readSourceOffset_" + read;
+    ASSERT_TRUE(waitFor([&] { return visualByName(window_->contentItem(), fieldName) != nullptr; }));
+    auto* field = visualByName(window_->contentItem(), fieldName);
+    auto* card = visualByName(window_->contentItem(), "inspector_" + read);
+    ASSERT_NE(card, nullptr);
+    QTest::qWait(30);
+    const auto height = card->height();
+    const auto revision = session_->revision();
+    const auto enter = [&](std::string_view text) {
+        QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier,
+                          field->mapToScene(QPointF(field->width() / 2, field->height() / 2)).toPoint());
+        QTest::keyClick(window_, Qt::Key_A, Qt::ControlModifier);
+        for (const char character : text)
+            QTest::keyClick(window_, character);
+        QTest::keyClick(window_, Qt::Key_Return);
+        QTest::qWait(30);
+    };
+    for (const auto* invalid : {"invalid", "still-invalid"}) {
+        enter(invalid);
+        EXPECT_EQ(session_->revision(), revision);
+        EXPECT_EQ(card->height(), height);
+        EXPECT_FALSE(field->property("errorText").toString().isEmpty());
+    }
+    capture("read-rejection-no-paragraph", {}, false, true);
+    enter("9007199254740993");
+    EXPECT_EQ(std::get<std::int64_t>(
+                  session_->queryValues(scope.toULongLong(), read.toULongLong(), "frameOffset").front().value),
+              9007199254740993LL);
+    EXPECT_EQ(session_->revision(), revision + 1);
+    EXPECT_EQ(field->property("text").toString(), "9007199254740993");
+    EXPECT_TRUE(field->property("errorText").toString().isEmpty());
+    EXPECT_EQ(warnings_->count(), 0);
+}
+
 // The verified integration gap: the graph viewer probed the command-line
 // fixture key "src" instead of the reference its attached Read names. A
 // document that has both must render the Read's media with the Read's
@@ -1831,7 +1875,10 @@ TEST_F(ShuffleSurface, CreatingAnUnwiredOutputIsAtomicAndStartsAtZero) {
     QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(confirm));
     EXPECT_EQ(session_->revision(), before);
     ASSERT_TRUE(item(QStringLiteral("shuffleNewChannel"))->isVisible());
-    EXPECT_FALSE(item(QStringLiteral("shuffleEditor"))->property("gestureProblem").toString().isEmpty());
+    const auto* editOwner = qobject_cast<ViewerController*>(
+        item(QStringLiteral("shuffleEditor"))->property("controller").value<QObject*>());
+    ASSERT_NE(editOwner, nullptr);
+    EXPECT_FALSE(editOwner->error().isEmpty()) << "duplicate outputs remain diagnosable by the command owner";
     QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(layer));
     QTest::keyClick(window_, Qt::Key_A, Qt::ControlModifier);
     type("mask");
@@ -1839,8 +1886,7 @@ TEST_F(ShuffleSurface, CreatingAnUnwiredOutputIsAtomicAndStartsAtZero) {
     QTest::keyClick(window_, Qt::Key_A, Qt::ControlModifier);
     type("a");
     QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, center(confirm));
-    ASSERT_TRUE(waitFor([&] { return !item(QStringLiteral("shuffleNewChannel"))->isVisible(); }, 2000))
-        << item(QStringLiteral("shuffleEditor"))->property("gestureProblem").toString().toStdString();
+    ASSERT_TRUE(waitFor([&] { return !item(QStringLiteral("shuffleNewChannel"))->isVisible(); }, 2000));
     const auto value = [&](const std::string& key) {
         return session_->queryValues(session_->document().rootNetworkId(), shuffle_.toULongLong(), key).front().value;
     };

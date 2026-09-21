@@ -74,14 +74,20 @@ namespace nemo::nodes {
 // to its primary list and the shared mask specs stay the only "Mask" section
 // members.
 [[nodiscard]] inline ParameterSpec mixParameterSpec(std::string section) {
+    // Mix declares no hard range (issue #103): the shared blend is
+    // `source + (effect - source) * mix` in every executor, which is defined
+    // for every finite factor, so 0..1 is the useful slider travel rather than
+    // an authoring validity rule. A typed, scrubbed or stepped value outside
+    // the travel is stored and evaluated exactly; only the finite,
+    // float-representable requirement remains.
     return {.name = "mix",
             .type = ParameterType::Float,
             .defaultValue = ParameterValue{1.0},
-            .minimum = 0.0,
-            .maximum = 1.0,
             .label = "Mix",
             .section = std::move(section),
-            .editor = {}};
+            .editor = {},
+            .softMinimum = 0.0,
+            .softMaximum = 1.0};
 }
 
 [[nodiscard]] inline std::vector<ParameterSpec> withMaskParameters(std::vector<ParameterSpec> specific) {

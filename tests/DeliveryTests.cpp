@@ -39,6 +39,7 @@
 #include "nemo/gpu/Error.hpp"
 #include "nemo/gpu/Instance.hpp"
 #include "nemo/media/ImageIO.hpp"
+#include "nemo/media/VideoDecode.hpp"
 
 using namespace nemo;
 using namespace nemo::eval;
@@ -325,6 +326,27 @@ TEST_F(DeliveryTest, PreflightReportsRefusalsFramesAndCollisions) {
     EXPECT_FALSE(unsupportedPlan.ok());
     EXPECT_NE(unsupportedPlan.problem.find("lzw"), std::string::npos) << unsupportedPlan.problem;
     EXPECT_FALSE(fs::exists(dir_->file("other.1.exr")));
+
+    // A movie's frame rate is a positive finite number and nothing more: the
+    // preflight no longer caps it (the removed 1000 fps ceiling was a
+    // convenience limit with no representation behind it, issue #103). A rate
+    // the container cannot express as a 32-bit rational is refused by the movie
+    // writer, where the conversion happens, not here.
+    DeliverySettings fastMovie;
+    fastMovie.file = dir_->file("fast.mov");
+    fastMovie.frameFirst = 1;
+    fastMovie.frameLast = 1;
+    fastMovie.output.fileType = "mov";
+    fastMovie.output.profile = "4444";
+    fastMovie.output.frameRate = 2000.0;
+    const DeliveryPlan fastPlan = queue->plan(graph.document, graph.network, graph.write, fastMovie, 0);
+    EXPECT_TRUE(fastPlan.ok()) << fastPlan.problem;
+
+    fastMovie.output.frameRate = 0.0;
+    const DeliveryPlan zeroRatePlan = queue->plan(graph.document, graph.network, graph.write, fastMovie, 0);
+    EXPECT_FALSE(zeroRatePlan.ok());
+    EXPECT_NE(zeroRatePlan.problem.find("frame rate"), std::string::npos) << zeroRatePlan.problem;
+    EXPECT_FALSE(fs::exists(fastMovie.file));
 
     // A node that is not a Write node is refused, naming the node.
     EXPECT_THROW(static_cast<void>(deliverySettings(graph.document, graph.network, graph.color, 0)), DeliveryException);
@@ -718,6 +740,9 @@ TEST_F(DeliveryTest, MovieIsPublishedOnlyWhenTheWholeRangeEncodes) {
         graph.document.network(graph.network)
             .graph()
             .setParam(graph.write, "channels", ChoiceValue{fileType == "mov" ? "rgba" : "rgb"});
+        graph.document.network(graph.network)
+            .graph()
+            .setParam(graph.write, "frameRate", fileType == "mov" ? 2000.0 : 24.0);
         const std::uint64_t id = queue->submit(graph.document, graph.network, graph.write, 0);
         queue->waitForIdle();
         const DeliveryJobInfo info = queue->status(id);
@@ -729,6 +754,7 @@ TEST_F(DeliveryTest, MovieIsPublishedOnlyWhenTheWholeRangeEncodes) {
         EXPECT_TRUE(info.files[0].written);
         EXPECT_EQ(info.files[0].path, path);
         ASSERT_TRUE(fs::exists(path)) << path;
+        EXPECT_DOUBLE_EQ(inspectClipHeader(path).frameRate, fileType == "mov" ? 2000.0 : 24.0);
         EXPECT_TRUE(dir_->temporaries().empty());
     }
 

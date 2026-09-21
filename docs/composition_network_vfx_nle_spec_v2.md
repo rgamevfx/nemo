@@ -123,6 +123,19 @@ The default node editor must closely match Nuke's interaction patterns for node 
 
 Houdini-inspired capabilities include consistent hierarchy, exposed interfaces, reusable definitions, parameter references, and programmatic graph construction. These capabilities extend the familiar compositing workflow without requiring them for a simple comp.
 
+Numeric parameter authoring has no arbitrary hard bounds by default. Slider
+travel is a navigation hint; typing, scrubbing and stepping can exceed it
+without changing stored precision. Retained hard restrictions require a
+parameter-specific semantic, representation or safety justification; exceptional
+cost limits require owner approval. Type, finite-value, identity, transaction
+and resource-admission validation remain authoritative.
+
+Parameter inspectors do not print unsolicited inline validation/error
+paragraphs or reserve space for them. Failures remain diagnosable through their
+existing owners and field affordances, without an automatic replacement
+notification system. Explicit Write render-job feedback is the approved
+exception (#103); unavailable component states are not parameter-edit errors.
+
 ### Modular workspaces
 
 Panels support splitting, tiling, resizing, tabbing, rearrangement, and saved user presets. Default workspaces are configurations of the same panels:

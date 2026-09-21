@@ -212,16 +212,21 @@ keeps its declared plan slot as the invalid sentinel `EvaluationNodeId{}`
 (node == `kInvalidNode`); the GPU binds the main image as a dummy descriptor
 with `maskPresent=0`, never an allocated fallback.
 
-`maskChannel` ∈ {none, R, G, B, A}, `invertMask`, `mix` ∈ [0, 1]. An absent mask
-or `none` gives coverage 1 independent of inversion. A connected mask
+`maskChannel` ∈ {none, R, G, B, A}, `invertMask`, and finite `mix` (soft
+navigation 0–1, not a hard range). An absent mask or `none` gives coverage 1
+independent of inversion. A connected mask
 contributes `coverage = clamp(selected stored channel, 0, 1)`, replaced by
 `1 - coverage` when inverted. A single blend runs once, after the effect, at
 output coordinates: `out = original + (processed - original) * (coverage * mix)`.
 The mask is never transformed and stays in output space.
+Mix outside 0–1 extrapolates on CPU, Slang and GLSL; only exactly zero/one
+take endpoint shortcuts. Transform retains original data support whenever
+Mix differs from one, including extrapolation.
 
 ### Grade
 
-Per enabled channel (`channels` ∈ {RGB, RGBA, R, G, B, Alpha, None}):
+Per enabled channel (`channels` ∈ {RGB, RGBA, R, G, B, Alpha, None}), when
+Blackpoint and Whitepoint differ:
 
 ```text
 a = (gain - lift) * multiply / (whitepoint - blackpoint)
@@ -235,12 +240,21 @@ negative/HDR extension, not a claim of bitwise agreement with the
 [Foundry Grade reference](https://learn.foundry.com/nuke/content/reference_guide/color_nodes/grade.html).
 Disabled channels are exact pass-through. `clampBlack`/`clampWhite` clamp to 0/1
 after the operation and before mask/mix. Enabled channels require finite
-coefficients, `gamma > 0`, and `whitepoint != blackpoint`; reverse additionally
-requires nonzero `a`. Invalid or unrepresentable settings are rejected with a
-node+parameter error, never substituted. Reverse inverts only the per-channel
-operation. Forward then reverse recovers the source within floating-point
-tolerance for nonsingular, unclamped settings at full effect coverage. Clipping,
-soft mask coverage, or `mix < 1` does not generally round-trip.
+coefficients and `gamma > 0`; nonsingular Reverse additionally requires nonzero
+`a`. These domains are explicitly retained by owner approval in #103.
+Invalid or unrepresentable settings remain node+parameter diagnostics.
+Reverse inverts only the per-channel operation. Forward then reverse recovers
+the source within floating-point tolerance for nonsingular, unclamped settings
+at full effect coverage. Clipping, soft mask coverage, or `mix != 1` does not
+generally round-trip.
+
+At exact equality (`blackpoint == whitepoint`, no epsilon band), #103 defines
+the shared endpoint as the range-mapped value. Forward computes
+`signedPow((gain-lift)*multiply*blackpoint + lift + offset, 1/gamma)`.
+Reverse outputs the shared endpoint directly, not a fabricated inverse.
+Both then apply the same clamps and Mask/Mix; unselected channels pass through.
+Neutral equal RGB endpoints 0.5 therefore yield scene-linear RGB 0.5, not a
+promise about display gray. Forward multiplication by zero remains valid.
 
 ### Blur
 
@@ -257,6 +271,17 @@ scratch image for every nonzero size and, at `size == 0`, records one identity
 pass with no scratch. The GPU fills the normalized weights once per node
 preparation into a read-only storage buffer and records the passes in one
 submission with no per-node wait.
+The radius is finite and nonnegative with no authored upper bound; 0–100 is
+navigation only. Execution checks the actual support's payload/index
+representation and widens halo arithmetic before checked coordinate conversion.
+`GpuNodeContext::maxStorageBufferBytes` carries the existing device capacity
+into preparation, so an oversized weights table is refused before host
+allocation; the GPU executor retains final admission and completion ownership.
+The CPU reference has an explicitly owner-approved **64 MiB weights-table
+budget** (#103), checked before allocation and tap loops. This is not an image
+memory budget or an authored maximum; radius 250 needs only 501 floats
+(2004 bytes). Very expensive requests within either resource budget can still
+be slow. CPU and native weight calculations remain independent.
 
 ### Transform
 
@@ -274,11 +299,12 @@ residuals agree. The mask is not transformed. Declared metadata maps the
 archived prototype Transform surface as SOFT adjustment travel
 (`softMinimum`/`softMaximum`): `translateX`/`translateY` ±200 step 1 sharing one
 `Translate` row, `scale` soft [0.1, 3] step 0.001, `rotate` soft ±180 step 0.1,
-and `filter` in the Sampling section. Soft travel is an interaction hint, never
-a legal bound: a typed value outside it is neither clamped nor quantized, and
-the persistent parameter identities stay independent. Scale must be positive
-and finite with a finite reciprocal; production defaults remain the identity
-transform.
+and `filter` in the Sampling section. Soft travel is a navigation hint:
+typing, scrubbing and stepping can all cross it without clamping or quantizing
+the authored value. Scale must be finite and nonzero with a finite reciprocal;
+a negative scale reverses both axes about the pivot. Production defaults remain
+the identity transform. Reformat's positive scale factors are different:
+they multiply output canvas dimensions rather than apply this signed map.
 
 ### Merge
 

@@ -66,7 +66,9 @@ FocusScope {
     property string activeToken: ""
     property var activeRow: null
     // The most recent rejected edit, attributed to one row. It is presentation
-    // only; the controller/catalog remain the validation authority.
+    // state only; the controller/catalog remain the validation authority, and
+    // the row hands it to the control's own error affordance rather than
+    // printing it into the inspector.
     property string gestureError: ""
     property string gestureErrorKey: ""
 
@@ -374,6 +376,7 @@ FocusScope {
             "nodeId": String(nodeId),
             "parameterKey": String(parameterKey)
         };
+        clearGestureError();
         return token;
     }
 
@@ -403,6 +406,7 @@ FocusScope {
             "nodeId": String(nodeId),
             "parameterKey": keys[0]
         };
+        clearGestureError();
         return token;
     }
 
@@ -412,7 +416,10 @@ FocusScope {
     function updateEditMany(token, values) {
         if (String(token).length === 0 || String(token) !== activeToken)
             return false;
-        return controller.updateNodeParameterEdits(String(token), values);
+        var result = controller.updateNodeParameterEdits(String(token), values);
+        if (!result)
+            recordError();
+        return result;
     }
 
     function beginEdit(row) {
@@ -426,7 +433,10 @@ FocusScope {
             return false;
         // The single-control API retains the resolved occurrence/exposed address.
         // A batch map instead names concrete keys on its captured target.
-        return controller.updateNodeParameterEdit(String(token), value);
+        var result = controller.updateNodeParameterEdit(String(token), value);
+        if (!result)
+            recordError();
+        return result;
     }
 
     // Publishing names the token too. The controller retires it through the same
@@ -506,8 +516,9 @@ FocusScope {
         gestureErrorKey = "";
     }
 
-    // Invalid typed text keeps the previous value and explains the parameter
-    // without a second validation contract: the message names the control.
+    // Invalid typed text keeps the previous value and states which control
+    // rejected it, without a second validation contract. It is never printed as
+    // its own inspector row: the typed field states it.
     function rejectText(row, text) {
         gestureError = "Parameter '" + (row && row.label ? String(row.label) : (row ? row.parameterKey : "")) + "' rejects '" + text + "'";
         gestureErrorKey = row ? String(row.parameterKey) : "";
@@ -917,8 +928,8 @@ FocusScope {
             property real columnWidth: twoColumnLayout ? Math.max(minCardWidth, (inspectorScroll.availableWidth - columnGap) / 2) : Math.max(minCardWidth, inspectorScroll.availableWidth)
             // The last card packed into each column. The content and the column
             // anchors take their height from it, so a card that grows (expanded
-            // RGB, an error line, a revealed editor) resizes the scrollable
-            // content without a second layout pass.
+            // RGB, a revealed editor) resizes the scrollable content without a
+            // second layout pass.
             property var columnTails: [null, null]
             width: twoColumnLayout ? columnWidth * 2 + columnGap : columnWidth
             height: Math.max(columnHeight(0), columnHeight(1))
@@ -1408,8 +1419,9 @@ FocusScope {
                 parameterRow.customEditorActive && parameterRow.editorInfo && parameterRow.editorInfo.presentation !== undefined
                     ? String(parameterRow.editorInfo.presentation) : "row"
             readonly property bool sectionEditor: parameterRow.editorPresentation === "section"
-            // Row-local feedback for the most recent rejected edit. The message
-            // comes from the controller/catalog; the panel never re-validates.
+            // Numeric controls consume this row-local rejection through their
+            // existing border/tooltip/description. Other controls leave the
+            // diagnosis on the controller; no row prints an error paragraph.
             readonly property string rowError: parametersPanel.gestureErrorKey === parameterRow.parameterKey ? parametersPanel.gestureError : ""
             // Exact authored text for numeric rows; Integer values must never
             // be displayed or committed through a lossy JavaScript number.
@@ -1643,10 +1655,6 @@ FocusScope {
                                     hasMaximum: parameterRow.hasMaximum
                                     minimum: parameterRow.minimum
                                     maximum: parameterRow.maximum
-                                    hasSoftMinimum: parameterRow.hasSoftMinimum
-                                    hasSoftMaximum: parameterRow.hasSoftMaximum
-                                    softMinimum: parameterRow.softMinimum
-                                    softMaximum: parameterRow.softMaximum
                                     step: parameterRow.numberStep
                                     decimals: parameterRow.decimals
                                     integer: parameterRow.integerParameter
@@ -1737,10 +1745,6 @@ FocusScope {
                                     hasMaximum: parameterRow.hasMaximum
                                     minimum: parameterRow.minimum
                                     maximum: parameterRow.maximum
-                                    hasSoftMinimum: parameterRow.hasSoftMinimum
-                                    hasSoftMaximum: parameterRow.hasSoftMaximum
-                                    softMinimum: parameterRow.softMinimum
-                                    softMaximum: parameterRow.softMaximum
                                     step: parameterRow.numberStep
                                     decimals: parameterRow.decimals
                                     label: parameterRow.rowLabel + " " + parameterRow.componentLabels[index]
@@ -1828,20 +1832,6 @@ FocusScope {
                         }
                     }
 
-                    // Row-local error feedback for the non-numeric kinds; the
-                    // numeric bundle renders its own.
-                    Text {
-                        objectName: "error_" + parameterRow.nodeId + "_" + parameterRow.parameterKey
-                        visible: parameterRow.rowError.length > 0 && parameterRow.kind !== "number"
-                        Layout.fillWidth: true
-                        text: parameterRow.rowError
-                        color: theme.errorText
-                        font.pixelSize: Math.max(9, theme.inspectorFontSize - 2)
-                        elide: Text.ElideRight
-                        wrapMode: Text.WordWrap
-                        Accessible.name: parameterRow.rowError
-                    }
-
                     // Registered namespaced editor host. When the editor is
                     // unavailable the generic control stays usable and the
                     // reason is surfaced without discarding parameter state.
@@ -1903,9 +1893,10 @@ FocusScope {
         }
     }
 
-    // The numeric control bundle: ONE owner for the typed field, the
-    // soft-travel slider and the rejected-edit message used by an ordinary
-    // number row, by a grouped pair row and by a registered row editor alike.
+    // The numeric control bundle: ONE owner for the typed field and the
+    // useful-width slider used by an ordinary number row, by a grouped pair row
+    // and by a registered row editor alike. A rejected edit keeps its state and
+    // reaches the field's own error affordance; the bundle prints no text.
     // Callers supply a `row` adapter object exposing the same members every row
     // kind already has, plus the presentation flags below. Grouping and
     // registration therefore add no second control semantics.
@@ -1918,7 +1909,7 @@ FocusScope {
             property var panel: null
             property var row: null
             // Live fit: a pair cell hides only the slider when there is no room
-            // for it; the field, marker and error always remain.
+            // for it; the field and marker always remain.
             property bool showSlider: true
             property bool compact: false
             // Field first, then the useful-width slider, as the design states.
@@ -2009,10 +2000,6 @@ FocusScope {
                     hasMaximum: numericControl.row ? numericControl.row.hasMaximum : false
                     minimum: numericControl.row ? numericControl.row.minimum : 0
                     maximum: numericControl.row ? numericControl.row.maximum : 0
-                    hasSoftMinimum: numericControl.row ? numericControl.row.hasSoftMinimum : false
-                    hasSoftMaximum: numericControl.row ? numericControl.row.hasSoftMaximum : false
-                    softMinimum: numericControl.row ? numericControl.row.softMinimum : 0
-                    softMaximum: numericControl.row ? numericControl.row.softMaximum : 0
                     step: numericControl.row ? numericControl.row.numberStep : 0.01
                     decimals: numericControl.row ? numericControl.row.decimals : -1
                     integer: numericControl.row ? numericControl.row.integerParameter : false
@@ -2070,18 +2057,6 @@ FocusScope {
                     // value at once.
                     gestureLive: numericControl.gestureLive
                 }
-            }
-
-            Text {
-                objectName: numericControl.row ? "error_" + numericControl.row.nodeId + "_" + numericControl.row.parameterKey : ""
-                visible: numericControl.row ? numericControl.row.rowError.length > 0 : false
-                Layout.fillWidth: true
-                text: numericControl.row ? numericControl.row.rowError : ""
-                color: numericControl.theme.errorText
-                font.pixelSize: numericControl.theme ? Math.max(9, numericControl.theme.inspectorFontSize - 2) : 9
-                elide: Text.ElideRight
-                wrapMode: Text.WordWrap
-                Accessible.name: numericControl.row ? numericControl.row.rowError : ""
             }
         }
     }

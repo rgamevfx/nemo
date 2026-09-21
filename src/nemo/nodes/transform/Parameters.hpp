@@ -18,12 +18,14 @@ struct TransformParameters {
     transform.translateX = effectiveNumber(catalog, node, effectiveParams, "translateX");
     transform.translateY = effectiveNumber(catalog, node, effectiveParams, "translateY");
     transform.scale = effectiveNumber(catalog, node, effectiveParams, "scale");
-    // Positive finite scale with a finite reciprocal: the archive's 0.1..3 was
-    // a useful slider range, not an equation limit, so typed scale 4 or 0.05
-    // stay usable while zero, negatives and reciprocals that overflow remain
-    // inadmissible.
-    if (!(transform.scale > 0.0F) || !std::isfinite(1.0F / transform.scale)) {
-        failNode(node, "parameter 'scale' must be positive and finite with a finite reciprocal");
+    // Scale is nonzero and finite with a finite reciprocal: the map divides by
+    // it, so zero has no inverse and a reciprocal that overflows has no bound.
+    // The archive's 0.1..3 was a useful slider range, not an equation limit, and
+    // a NEGATIVE scale is the same map mirrored — every consumer maps corners
+    // and takes their min/max, so no sign assumption exists to violate
+    // (issue #103). A typed scale 4, 0.05 or -1 therefore stays usable.
+    if (!std::isfinite(transform.scale) || transform.scale == 0.0F || !std::isfinite(1.0F / transform.scale)) {
+        failNode(node, "parameter 'scale' must be nonzero and finite with a finite reciprocal");
     }
     transform.rotate = effectiveNumber(catalog, node, effectiveParams, "rotate");
     const std::string& filter = effectiveChoice(catalog, node, effectiveParams, "filter");

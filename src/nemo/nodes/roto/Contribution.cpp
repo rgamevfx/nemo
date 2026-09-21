@@ -95,20 +95,33 @@ NodeDescriptor rotoDescriptor() {
                           .group = "Draw",
                           // 1: the first published Roto implementation (typed
                           // document data, CPU reference and native kernels).
-                          .implementationVersion = 1,
+                          // 2: `opacity` and `shutter` declare no arbitrary
+                          // upper bound (issue #103); `samples` keeps its
+                          // recorded [1, 64] resource range.
+                          .implementationVersion = 2,
                           .inputs = {{PortKind::Image, "bg", true}, {PortKind::Mask, "mask", true}},
                           .outputs = {{PortKind::Image, "out"}},
                           .parameters =
                               {
+                                  // Opacity is a plain matte multiplier on both
+                                  // executors (`matte * opacity`, no clamp
+                                  // anywhere), so 0..1 is the useful slider
+                                  // travel, not an authoring validity rule: a
+                                  // typed, scrubbed or stepped factor outside
+                                  // it is stored and evaluated exactly
+                                  // (issue #103). Unlike an ELEMENT's opacity
+                                  // this is applied after the sibling fold, so
+                                  // it cannot leave the documented coverage
+                                  // algebra's [0,1] operand domain.
                                   {.name = "opacity",
                                    .type = ParameterType::Float,
                                    .defaultValue = ParameterValue{1.0},
-                                   .minimum = 0.0,
-                                   .maximum = 1.0,
                                    .step = 0.01,
                                    .label = "Opacity",
                                    .section = "Roto",
-                                   .editor = "nemo.roto.shapes"},
+                                   .editor = "nemo.roto.shapes",
+                                   .softMinimum = 0.0,
+                                   .softMaximum = 1.0},
                                   {.name = "outputChannel",
                                    .type = ParameterType::String,
                                    .defaultValue = ParameterValue{std::string{"A"}},
@@ -128,15 +141,41 @@ NodeDescriptor rotoDescriptor() {
                                    .label = "Clip",
                                    .section = "Output",
                                    .editor = {}},
+                                  // Shutter is the exposure LENGTH in frames
+                                  // (ADR-0008): zero is a closed shutter and
+                                  // the useful travel is 0..1, but a longer
+                                  // exposure is a legal authored value. The
+                                  // upper bound was a convention, not a
+                                  // representation limit — the sample times it
+                                  // produces are plain doubles. A negative
+                                  // length is not a distinct effect (the
+                                  // symmetric midpoint rule selects the same
+                                  // sample set), so the sign stays constrained
+                                  // (issue #103).
                                   {.name = "shutter",
                                    .type = ParameterType::Float,
                                    .defaultValue = ParameterValue{0.5},
                                    .minimum = 0.0,
-                                   .maximum = 1.0,
                                    .step = 0.01,
                                    .label = "Shutter",
                                    .section = "Motion Blur",
-                                   .editor = {}},
+                                   .editor = {},
+                                   .softMinimum = 0.0,
+                                   .softMaximum = 1.0},
+                                  // RETAINED hard range [1, 64] (issue #103): the
+                                  // one bound kept as a resource restriction,
+                                  // not an arbitrary algorithm constant. Motion
+                                  // blur is the heavy temporal work the owner
+                                  // named, the sample count multiplies both the
+                                  // pixel pass and the description pass's
+                                  // geometry evaluation, and core evaluation has
+                                  // no cancellation seam inside the sample loop,
+                                  // so an unbounded count is a hang risk rather
+                                  // than merely slow. Recorded as approved policy
+                                  // in ADR-0008 ("centered midpoint samples, at
+                                  // most 64"); extending it needs dynamic sample
+                                  // storage plus an admission/cancellation seam,
+                                  // which is a resource-admission owner (#97/#14).
                                   {.name = "samples",
                                    .type = ParameterType::Integer,
                                    .defaultValue = ParameterValue{std::int64_t{1}},

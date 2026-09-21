@@ -116,9 +116,13 @@ void main() {
         coverage = mask.y > 0.5 ? 1.0 - selected : selected;
     }
     // Endpoints are exact: weight 0 keeps the background, weight 1 the
-    // unmasked composite, so Mix 0 or zero coverage returns the background.
+    // unmasked composite, so Mix 0 or zero coverage returns the background. The
+    // comparisons are equality, never `<= 0`/`>= 1`: a clamp there would
+    // saturate an extrapolating Mix (issue #103) and disagree with the CPU
+    // seam, which blends `background + (composite - background) * weight` for
+    // every finite weight.
     float weight = coverage * mask.z;
-    vec4 result = weight <= 0.0 ? bg : (weight >= 1.0 ? composite : mix(bg, composite, weight));
+    vec4 result = weight == 0.0 ? bg : (weight == 1.0 ? composite : mix(bg, composite, weight));
     // The background B is this node's main input (binding 0): every stored
     // channel the composite did not write keeps its named channel from B at the
     // same coordinate (#90).

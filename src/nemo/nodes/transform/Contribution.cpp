@@ -25,7 +25,10 @@ NodeDescriptor transformDescriptor() {
                           // for its output raster, describes the geometry its
                           // data bounds change to, and tolerates an empty input
                           // data window (issue #88).
-                          .implementationVersion = 2,
+                          // 3: `scale` declares no hard range (issue #103):
+                          // nonzero with a finite reciprocal is the whole rule,
+                          // so a negative mirroring scale is authoritative.
+                          .implementationVersion = 3,
                           .inputs = effectImageInputs(),
                           .outputs = {{PortKind::Image, "out"}},
                           .parameters = withMaskParameters({
@@ -52,7 +55,10 @@ NodeDescriptor transformDescriptor() {
                               {.name = "scale",
                                .type = ParameterType::Float,
                                .defaultValue = ParameterValue{1.0},
-                               .minimum = 0.0,
+                               // No hard range (issue #103): zero is excluded by
+                               // `nonzero` and the reciprocal must be finite,
+                               // which is the whole admissibility rule. A
+                               // negative scale mirrors the same map.
                                .step = 0.001,
                                .label = "Scale",
                                .section = "Transform",
@@ -97,8 +103,8 @@ NodeDescriptor transformDescriptor() {
     const NodeInstance& node = context.node;
     const EvaluationRequest& request = context.request;
     if (!isFinite(params.translateX) || !isFinite(params.translateY) || !isFinite(params.rotate) ||
-        !isFinite(params.scale) || !(params.scale > 0.0F)) {
-        failNode(node, "Transform parameters must be finite with a positive 'scale'");
+        !isFinite(params.scale) || params.scale == 0.0F || !isFinite(1.0F / params.scale)) {
+        failNode(node, "Transform parameters must be finite with a nonzero 'scale' and a finite reciprocal");
     }
     if (params.filter < 0 || params.filter > 2) {
         failNode(node, "parameter 'filter' has unknown mode " + std::to_string(params.filter));
@@ -418,7 +424,7 @@ std::vector<InputRequirement> transformInputRequirements(const NodeRegionContext
         }
     }
     const int footprint = params.filter == 0 ? 2 : 1;
-    const double padding = static_cast<double>(footprint + 2) * static_cast<double>(params.scale) *
+    const double padding = static_cast<double>(footprint + 2) * std::abs(static_cast<double>(params.scale)) *
                            static_cast<double>(std::max(1.0F, aspect));
     return representableRegion(node, "the transform's mapped data window", std::floor(minX - padding),
                                std::floor(minY - padding), std::ceil(maxX + padding), std::ceil(maxY + padding));
@@ -438,7 +444,7 @@ std::vector<InputRequirement> transformInputRequirements(const NodeRegionContext
     ImageDescription described = context.inherited;
     described.dataBounds = transformedDataBounds(context.node, context.inherited, params);
     const EffectMaskParameters mask = effectiveEffectMask(context.catalog, context.node, authored);
-    if (mask.mix < 1.0F || (mask.channel >= 0 && context.inputs.size() > 1 && context.inputs[1] != nullptr)) {
+    if (mask.mix != 1.0F || (mask.channel >= 0 && context.inputs.size() > 1 && context.inputs[1] != nullptr)) {
         described.dataBounds = regionUnion(described.dataBounds, context.inherited.dataBounds);
     }
     return described;

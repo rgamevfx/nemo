@@ -1,0 +1,22 @@
+{
+    "appearance_preset": "Graphite",
+    "capture": "read-rejection-no-paragraph",
+    "controller_zoom": 1,
+    "device_pixel_ratio": 1,
+    "displayed_scale": 0,
+    "media_surface_height": 0,
+    "media_surface_width": 0,
+    "pan_x": 0,
+    "pan_y": 0,
+    "panel": "panel-a",
+    "platform": "wayland",
+    "qt": "6.4.2",
+    "region_height": 0,
+    "region_width": 0,
+    "region_x": 0,
+    "region_y": 0,
+    "sampling_scale": 1,
+    "stated_zoom": "",
+    "window_height": 687,
+    "window_width": 1274
+}

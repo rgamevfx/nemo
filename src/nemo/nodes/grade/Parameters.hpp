@@ -55,18 +55,24 @@ struct GradeParameters {
     // operation, and a reverse grade must also be invertible. Disabled
     // (unselected) channels pass through untouched and are not constrained,
     // even when their coefficients are singular.
+    //
+    // Equal endpoints are not a rejection (issue #103). An enabled channel whose
+    // Blackpoint and Whitepoint coincide is a constant mapping, tested by exact
+    // float equality with no epsilon band: the near-equal discontinuity is
+    // accepted. Forward keeps running the remaining controls on the shared
+    // endpoint as the range-mapped value; reverse has no source to recover and
+    // uses the shared endpoint itself, then the shared clamps and Mask/Mix.
     for (int channel = 0; channel < 4; ++channel) {
         if ((grade.channels & (1U << channel)) == 0)
             continue;
-        const float gamma = grade.gamma[static_cast<std::size_t>(channel)];
+        const auto index = static_cast<std::size_t>(channel);
+        const float gamma = grade.gamma[index];
         if (!(gamma > 0.0F) || !std::isfinite(gamma)) {
             failNode(node, "parameter 'gamma' must be finite and positive for every enabled channel");
         }
         // Every coefficient component of an enabled channel must itself be
         // finite; disabled channels are exempt.
-        const auto componentFinite = [&](const std::array<float, 4>& values) {
-            return std::isfinite(values[static_cast<std::size_t>(channel)]);
-        };
+        const auto componentFinite = [&](const std::array<float, 4>& values) { return std::isfinite(values[index]); };
         if (!componentFinite(grade.blackpoint) || !componentFinite(grade.whitepoint) || !componentFinite(grade.lift) ||
             !componentFinite(grade.gain) || !componentFinite(grade.multiply) || !componentFinite(grade.offset) ||
             !componentFinite(grade.gamma)) {
@@ -78,16 +84,24 @@ struct GradeParameters {
         if (!std::isfinite(exponent)) {
             failNode(node, "parameter 'gamma' has no finite exponent for an enabled channel");
         }
-        const float blackpoint = grade.blackpoint[static_cast<std::size_t>(channel)];
-        const float whitepoint = grade.whitepoint[static_cast<std::size_t>(channel)];
-        if (whitepoint == blackpoint) {
-            failNode(node, "parameters 'whitepoint' and 'blackpoint' must differ for every enabled channel");
+        const float blackpoint = grade.blackpoint[index];
+        const float whitepoint = grade.whitepoint[index];
+        if (blackpoint == whitepoint) {
+            // The shared endpoint is the whole result: forward continues the
+            // remaining controls on it, reverse uses it directly. Only the
+            // forward constant must additionally be representable, checked in
+            // the order the execution evaluates it so no NaN reaches a pixel.
+            if (!grade.reverse) {
+                const float constant = (grade.gain[index] - grade.lift[index]) * grade.multiply[index] * blackpoint +
+                                       grade.lift[index] + grade.offset[index];
+                if (!std::isfinite(constant)) {
+                    failNode(node, "grade parameters produce an unrepresentable constant for an enabled channel");
+                }
+            }
+            continue;
         }
-        const float slope =
-            (grade.gain[static_cast<std::size_t>(channel)] - grade.lift[static_cast<std::size_t>(channel)]) *
-            grade.multiply[static_cast<std::size_t>(channel)] / (whitepoint - blackpoint);
-        const float intercept = grade.lift[static_cast<std::size_t>(channel)] +
-                                grade.offset[static_cast<std::size_t>(channel)] - blackpoint * slope;
+        const float slope = (grade.gain[index] - grade.lift[index]) * grade.multiply[index] / (whitepoint - blackpoint);
+        const float intercept = grade.lift[index] + grade.offset[index] - blackpoint * slope;
         if (!std::isfinite(slope) || !std::isfinite(intercept)) {
             failNode(node, "grade parameters produce unrepresentable coefficients for an enabled channel");
         }

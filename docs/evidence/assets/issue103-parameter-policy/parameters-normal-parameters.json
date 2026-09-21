@@ -1,0 +1,10 @@
+{
+    "background": "#181a1d",
+    "devicePixelRatio": 1,
+    "platform": "wayland",
+    "qt": "6.4.2",
+    "resolvedWindowFontFamily": "Noto Sans",
+    "windowFont": "Inter,-1,11,5,400,0,0,0,0,0,0,0,0,0,0,1",
+    "windowHeight": 900,
+    "windowWidth": 1274
+}

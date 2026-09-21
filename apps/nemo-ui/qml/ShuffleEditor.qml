@@ -102,8 +102,6 @@ ColumnLayout {
     // --- model -------------------------------------------------------------
     property var paramRows: ({})
     onParamRowsChanged: shuffleEditor.scheduleWirePaint()
-    property string schemaProblem: ""
-    property string gestureProblem: ""
     // Named channel availability of this node's image inputs, as answered by the
     // worker description query. Never a fabricated list.
     property var channelAnswer: ({})
@@ -144,7 +142,6 @@ ColumnLayout {
                 rows[String(parameters[row].key)] = parameters[row];
         }
         shuffleEditor.paramRows = rows;
-        shuffleEditor.schemaProblem = inspector && inspector.available === false ? String(inspector.reason === undefined ? "" : inspector.reason) : "";
         shuffleEditor.refreshChannels();
     }
 
@@ -730,12 +727,9 @@ ColumnLayout {
     }
 
     function connectSockets(source, target, mode) {
-        shuffleEditor.gestureProblem = "";
         var values = shuffleEditor.connectionValues(source, target, mode);
-        if (Object.keys(values).length === 0) {
-            shuffleEditor.gestureProblem = shuffleEditor.invalidDropReason(source, target);
+        if (Object.keys(values).length === 0)
             return false;
-        }
         return shuffleEditor.gestureValues(values);
     }
 
@@ -752,7 +746,6 @@ ColumnLayout {
                 continue;
             return shuffleEditor.connectSockets(input, shuffleEditor.socketEntry("output", 0, "", row), "single");
         }
-        shuffleEditor.gestureProblem = "No output socket at this channel's position";
         return false;
     }
 
@@ -762,14 +755,12 @@ ColumnLayout {
                 continue;
             return shuffleEditor.connectSockets(input, shuffleEditor.socketEntry("output", 0, "", row), "single");
         }
-        shuffleEditor.gestureProblem = "No output channel named '" + input.channel + "'";
         return false;
     }
 
     function doubleClickSocket(entry, modifiers) {
         if (String(entry.role) !== "input")
             return false;
-        shuffleEditor.gestureProblem = "";
         if (modifiers & Qt.ControlModifier)
             return shuffleEditor.autoConnectByName(entry);
         return shuffleEditor.autoConnectByOrder(entry);
@@ -778,7 +769,6 @@ ColumnLayout {
     // Auto-connect all channels (drag and drop): each of the input group's
     // channels connects to the output row at the same position.
     function autoConnectAll(inputGroup, outputGroup) {
-        shuffleEditor.gestureProblem = "";
         var channels = shuffleEditor.groupSourceChannels(inputGroup);
         var values = {};
         for (var index = 0; index < channels.length && index < shuffleEditor.rowsPerGroup; ++index) {
@@ -788,16 +778,13 @@ ColumnLayout {
             values["sourceKind" + row] = shuffleEditor.inputChoiceKey(inputGroup);
             values["sourceChannel" + row] = channels[index];
         }
-        if (Object.keys(values).length === 0) {
-            shuffleEditor.gestureProblem = "No output channel of this group is available to connect";
+        if (Object.keys(values).length === 0)
             return false;
-        }
         return shuffleEditor.gestureValues(values);
     }
 
     // --- constants ----------------------------------------------------------
     function setConstant(row, kind) {
-        shuffleEditor.gestureProblem = "";
         var values = {};
         values["sourceKind" + row] = kind;
         return shuffleEditor.gestureValues(values);
@@ -805,7 +792,6 @@ ColumnLayout {
 
     // Ctrl/Cmd+click sets every authored output channel to the same constant.
     function setAllConstants(kind) {
-        shuffleEditor.gestureProblem = "";
         var values = {};
         for (var row = 0; row < shuffleEditor.rowCount; ++row) {
             if (!shuffleEditor.rowEnabled(row))
@@ -882,7 +868,6 @@ ColumnLayout {
     }
 
     function commitGroupSelection(group, field, value) {
-        shuffleEditor.gestureProblem = "";
         var text = String(value);
         if (field !== "image" && text === "none")
             text = "";
@@ -893,20 +878,6 @@ ColumnLayout {
         return shuffleEditor.gestureValues(shuffleEditor.groupSelectionValues(group, field, text));
     }
 
-    function outputsUnique(values) {
-        var seen = ({});
-        for (var row = 0; row < shuffleEditor.rowCount; ++row) {
-            var output = values["outputChannel" + row] !== undefined ? String(values["outputChannel" + row]) : shuffleEditor.rowOutput(row);
-            if (output.length === 0)
-                continue;
-            if (seen[output] === true) {
-                shuffleEditor.gestureProblem = "Output channel '" + output + "' is already mapped by another row";
-                return false;
-            }
-            seen[output] = true;
-        }
-        return true;
-    }
 
     // --- layer reordering ---------------------------------------------------
     // Reorder one side without changing pixels or the other side's order.
@@ -994,27 +965,19 @@ ColumnLayout {
             return false;
         if (Object.keys(values).length === 0)
             return false;
-        if (!shuffleEditor.outputsUnique(values))
-            return false;
         var keys = Object.keys(values);
         var token = String(shuffleEditor.panel.beginEditForMany(shuffleEditor.networkId, shuffleEditor.nodeId, keys));
-        if (token.length === 0) {
-            shuffleEditor.gestureProblem = shuffleEditor.controller ? String(shuffleEditor.controller.error) : "";
+        if (token.length === 0)
             return false;
-        }
         if (shuffleEditor.panel.updateEditMany(token, values) !== true) {
-            var message = shuffleEditor.controller ? String(shuffleEditor.controller.error) : "";
             shuffleEditor.panel.cancelEdit(token);
-            shuffleEditor.gestureProblem = message;
             shuffleEditor.refresh();
             return false;
         }
         if (shuffleEditor.panel.commitEdit(token) !== true) {
-            shuffleEditor.gestureProblem = shuffleEditor.controller ? String(shuffleEditor.controller.error) : "";
             shuffleEditor.refresh();
             return false;
         }
-        shuffleEditor.gestureProblem = "";
         shuffleEditor.refresh();
         return true;
     }
@@ -1023,10 +986,8 @@ ColumnLayout {
     // Creation belongs to Out -> new. Existing output labels open routing/key
     // controls without exposing per-row channel creation or deletion.
     property var newChannelRequest: null
-    property string newChannelProblem: ""
 
     function openNewChannel(group) {
-        shuffleEditor.newChannelProblem = "";
         shuffleEditor.newChannelRequest = ({
             "kind": "output",
             "group": Number(group)
@@ -1036,7 +997,6 @@ ColumnLayout {
     }
 
     function openRouting(row) {
-        shuffleEditor.newChannelProblem = "";
         shuffleEditor.newChannelRequest = ({
             "kind": "routing",
             "row": Number(row)
@@ -1044,7 +1004,6 @@ ColumnLayout {
     }
 
     function openNewSourceChannel(group) {
-        shuffleEditor.newChannelProblem = "";
         shuffleEditor.newChannelRequest = ({
             "kind": "source",
             "row": -1,
@@ -1060,7 +1019,6 @@ ColumnLayout {
         // Cancelling publishes nothing: the request is dropped and no gesture
         // was ever started for it.
         shuffleEditor.newChannelRequest = null;
-        shuffleEditor.newChannelProblem = "";
     }
 
     function confirmNewChannel() {
@@ -1069,10 +1027,10 @@ ColumnLayout {
             return;
         var layer = String(newLayerField.text).trim();
         var channel = String(newChannelField.text).trim();
-        if (layer.length === 0 || channel.length === 0) {
-            shuffleEditor.newChannelProblem = "Enter both a layer name and a channel name";
+        // An incomplete name publishes nothing and leaves the draft open; the
+        // field that is still empty is the state, not a printed line.
+        if (layer.length === 0 || channel.length === 0)
             return;
-        }
         var name = shuffleEditor.fullChannelName(layer, channel);
         if (String(request.kind) === "source") {
             // A typed source channel is presentation state: it adds a socket the
@@ -1096,10 +1054,8 @@ ColumnLayout {
         if (sameLayer) {
             while (row < last && shuffleEditor.rowEnabled(row))
                 ++row;
-            if (row === last) {
-                shuffleEditor.newChannelProblem = "This output group has four channels. Use the other Out group for another layer.";
+            if (row === last)
                 return;
-            }
         }
         var values = {};
         if (!sameLayer) {
@@ -1109,8 +1065,6 @@ ColumnLayout {
         values["outputChannel" + row] = name;
         values["sourceKind" + row] = "zero";
         values[shuffleEditor.outLayerKey(group)] = layer;
-        if (!shuffleEditor.outputsUnique(values))
-            return;
         if (!shuffleEditor.gestureValues(values))
             return;
         shuffleEditor.cancelNewChannel();
@@ -1336,15 +1290,6 @@ ColumnLayout {
                 }
             }
 
-            Text {
-                Layout.fillWidth: true
-                visible: shuffleEditor.newChannelProblem.length > 0
-                text: shuffleEditor.newChannelProblem
-                color: shuffleEditor.errorColor
-                font.pixelSize: shuffleEditor.smallFontSize
-                wrapMode: Text.WordWrap
-            }
-
             RowLayout {
                 Layout.fillWidth: true
                 spacing: 4
@@ -1507,21 +1452,11 @@ ColumnLayout {
         }
     }
 
-    Text {
-        objectName: "shuffleProblem_" + shuffleEditor.nodeId
-        Layout.fillWidth: true
-        visible: shuffleEditor.gestureProblem.length > 0 || shuffleEditor.schemaProblem.length > 0
-        text: shuffleEditor.gestureProblem.length > 0 ? shuffleEditor.gestureProblem : shuffleEditor.schemaProblem
-        color: shuffleEditor.errorColor
-        font.pixelSize: shuffleEditor.smallFontSize
-        wrapMode: Text.WordWrap
-        Accessible.name: text
-    }
 
     Text {
         objectName: "shuffleHint_" + shuffleEditor.nodeId
         Layout.fillWidth: true
-        visible: shuffleEditor.dragHint.length > 0 && shuffleEditor.gestureProblem.length === 0
+        visible: shuffleEditor.dragHint.length > 0
         text: shuffleEditor.dragHint
         color: shuffleEditor.mutedColor
         font.pixelSize: shuffleEditor.smallFontSize

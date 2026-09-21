@@ -820,14 +820,6 @@ ColumnLayout {
         editor.roto.reparentElement(id, parent, target);
     }
 
-    function errorText() {
-        if (editor.roto && String(editor.roto.error || "").length > 0)
-            return String(editor.roto.error);
-        if (editor.panel && String(editor.panel.gestureError || "").length > 0)
-            return String(editor.panel.gestureError);
-        return "";
-    }
-
     // --- shared cell components -------------------------------------------
     component Cell: ExposureLabel {
         id: cell
@@ -947,8 +939,6 @@ ColumnLayout {
             minimum: editor.boundValue(scalarRow.elementId, scalarRow.pointId, scalarRow.fieldKey, "minimum")
             hasMaximum: editor.paramState(scalarRow.elementId, scalarRow.pointId, scalarRow.fieldKey).hasMaximum === true
             maximum: editor.boundValue(scalarRow.elementId, scalarRow.pointId, scalarRow.fieldKey, "maximum")
-            hasSoftMinimum: false
-            hasSoftMaximum: false
             step: editor.stepValue(scalarRow.elementId, scalarRow.pointId, scalarRow.fieldKey)
             label: scalarRow.fieldLabel
             dragThreshold: editor.dragThreshold
@@ -1002,8 +992,6 @@ ColumnLayout {
                 value: editor.vectorValue(vectorRow.elementId, vectorRow.pointId, vectorRow.fieldKey, componentField.index)
                 hasMinimum: false
                 hasMaximum: false
-                hasSoftMinimum: false
-                hasSoftMaximum: false
                 step: editor.stepValue(vectorRow.elementId, vectorRow.pointId, vectorRow.fieldKey)
                 label: vectorRow.fieldLabel + " " + componentField.modelData
                 dragThreshold: editor.dragThreshold
@@ -1249,7 +1237,7 @@ ColumnLayout {
 
     // One NODE string parameter (output / mask channel): the exact authored text
     // is committed through the host's own typed gesture, so an invalid name is
-    // rejected by the catalog and stated by the shared error line.
+    // rejected by the catalog without the inspector printing a line for it.
     component NodeTextField: TextField {
         id: nodeText
         required property string fieldKey
@@ -1364,14 +1352,16 @@ ColumnLayout {
             readonly property string parameterKey: "opacity"
             readonly property string rowLabel: "Master Opacity"
             readonly property real numberValue: editor.parameter && editor.parameter.value !== undefined && editor.parameter.value !== null && editor.parameter.value.length === undefined ? Number(editor.parameter.value) : 1
-            readonly property bool hasMinimum: true
-            readonly property bool hasMaximum: true
-            readonly property real minimum: 0
-            readonly property real maximum: 1
-            readonly property bool hasSoftMinimum: true
-            readonly property bool hasSoftMaximum: true
-            readonly property real softMinimum: 0
-            readonly property real softMaximum: 1
+            readonly property bool hasMinimum: editor.parameter && editor.parameter.minimum !== undefined
+            readonly property bool hasMaximum: editor.parameter && editor.parameter.maximum !== undefined
+            readonly property real minimum: opacityRow.hasMinimum ? Number(editor.parameter.minimum) : 0
+            readonly property real maximum: opacityRow.hasMaximum ? Number(editor.parameter.maximum) : 0
+            // Navigation travel only, and only as the schema declares it: this
+            // row states no bound policy of its own.
+            readonly property bool hasSoftMinimum: editor.parameter && editor.parameter.softMinimum !== undefined
+            readonly property bool hasSoftMaximum: editor.parameter && editor.parameter.softMaximum !== undefined
+            readonly property real softMinimum: opacityRow.hasSoftMinimum ? Number(editor.parameter.softMinimum) : 0
+            readonly property real softMaximum: opacityRow.hasSoftMaximum ? Number(editor.parameter.softMaximum) : 0
             readonly property real numberStep: editor.parameter && editor.parameter.step !== undefined ? Number(editor.parameter.step) : 0.01
             readonly property int decimals: -1
             readonly property bool integerParameter: false
@@ -2069,8 +2059,6 @@ ColumnLayout {
             }
             hasMinimum: false
             hasMaximum: false
-            hasSoftMinimum: false
-            hasSoftMaximum: false
             step: 1
             label: "First frame"
             dragThreshold: editor.dragThreshold
@@ -2097,8 +2085,6 @@ ColumnLayout {
             }
             hasMinimum: false
             hasMaximum: false
-            hasSoftMinimum: false
-            hasSoftMaximum: false
             step: 1
             label: "Last frame"
             dragThreshold: editor.dragThreshold
@@ -2148,18 +2134,6 @@ ColumnLayout {
             fieldKey: "samples"
             caption: "samples"
         }
-    }
-
-    Text {
-        objectName: "rotoEditorError_" + editor.nodeId
-        visible: editor.errorText().length > 0
-        Layout.fillWidth: true
-        text: editor.errorText()
-        color: editor.errorColor
-        font.pixelSize: editor.smallFontSize
-        elide: Text.ElideRight
-        wrapMode: Text.WordWrap
-        Accessible.name: editor.errorText()
     }
 
     Component {

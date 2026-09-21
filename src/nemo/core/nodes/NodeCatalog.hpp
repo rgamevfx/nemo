@@ -80,10 +80,11 @@ struct ParameterSpec {
     std::string label;
     std::string section;
     std::string editor;
-    // Soft adjustment travel for scrubbing and sliders. It is an interaction
-    // hint, never a legal-value bound: typed values are not clamped or
-    // quantized to it. When both are present they must be finite, ordered, and
-    // inside the declared hard range.
+    // Soft adjustment travel for sliders. Navigation hints only, never a
+    // legal-value bound: typing is not clamped to it, and scrubbing and
+    // keyboard stepping move past it in both directions, so an authored value
+    // outside the travel is displayed, keyed and stored exactly. When both are
+    // present they must be finite, ordered, and inside the declared hard range.
     std::optional<double> softMinimum{};
     std::optional<double> softMaximum{};
     // Display rounding hint for numeric controls (0..9). Stored precision is

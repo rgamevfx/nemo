@@ -25,6 +25,7 @@
 #include <cmath>
 #include <cstring>
 #include <filesystem>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <string>
@@ -1207,6 +1208,351 @@ TEST(Effect, BlurRegionRequestCarriesItsHaloAndMatchesFullFrame) {
         << "blur input is anchored before the blur raster (halo demanded beyond the node coverage)";
     EXPECT_LT(plateStep->region.y, blurStep->region.y) << "blur input is anchored above the blur raster";
     EXPECT_GT(plateStep->region.width, blurStep->region.width);
+    expectValidationClean(*boot.instance);
+}
+
+// ---------------------------------------------------------------------------
+// Issue #103: authored numeric limits. Blur's `size` lost its arbitrary 100
+// maximum, so 101 and 250 must run the declared Gaussian on both front ends,
+// and Grade's exactly equal Blackpoint/Whitepoint is the approved
+// shared-endpoint convention on both. Every expectation below is derived from
+// the declared effect math plus the fixture's own plate/mask values, so no
+// front end — and not the CPU reference — is another's oracle.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// The declared normalized separable Gaussian: sigma = size/3, support =
+// ceil(size/samplingScale), raster sample i at full-resolution offset
+// i*samplingScale, exp(-0.5*(i*samplingScale/sigma)^2) normalized per axis.
+// Derived in double here, independently of any evaluator.
+[[nodiscard]] std::vector<float> declaredGaussianWeights(double size, int samplingScale) {
+    const auto support = static_cast<int>(std::ceil(size / static_cast<double>(samplingScale)));
+    std::vector<double> weights(static_cast<std::size_t>(2 * support + 1));
+    const double sigma = size / 3.0;
+    double total = 0.0;
+    for (int i = -support; i <= support; ++i) {
+        const double distance = static_cast<double>(i * samplingScale) / sigma;
+        weights[static_cast<std::size_t>(i + support)] = std::exp(-0.5 * distance * distance);
+        total += weights[static_cast<std::size_t>(i + support)];
+    }
+    std::vector<float> result(weights.size());
+    for (std::size_t i = 0; i < weights.size(); ++i)
+        result[i] = static_cast<float>(weights[i] / total);
+    return result;
+}
+
+}  // namespace
+
+TEST(Effect, NativeBlurRadiusBeyondTheLegacyCeilingMatchesDeclaredKernelOnBothFrontEnds) {
+    const Bootstrap boot = createBootstrap();
+    NEMO_SKIP_UNLESS_SLANG(boot);
+
+    constexpr int kWidth = 96;
+    constexpr int kHeight = 64;
+    Document doc = makeEffectDocument("blur", ParameterValues{{"channels", ChoiceValue{"RGB"}}}, false);
+    CommandStack commands(doc);
+    commands.push(setNetworkFormatCommand(doc.rootNetworkId(), ImageFormat{kWidth, kHeight, 1.0F}));
+    const NodeId effect = rootGraph(doc).nodeByName("effect")->id;
+    // Frame 2 puts the blue bar at [24, 30), exercising an interior step.
+    // The R/G gradients also exercise clamp-to-edge behavior at the borders.
+    const EvaluationRequest request = requestFor(doc, {0, 0, kWidth, kHeight}, 2);
+    const auto source = [](int x, int y) {
+        const double u = static_cast<double>(x) / (kWidth - 1);
+        const double v = static_cast<double>(y) / (kHeight - 1);
+        const bool inBar = x >= 24 && x < 30;
+        return std::array<float, 4>{static_cast<float>(u), static_cast<float>(v), inBar ? 1.0F : 0.0F, 1.0F};
+    };
+    // R, G and B each vary along a single axis, so one diagonal sum of the
+    // normalized weights is exactly the separable filter with clamp-to-edge.
+    const auto declared = [&](const std::vector<float>& weights, int support, int x, int y) {
+        std::array<double, 4> total{};
+        for (int tap = -support; tap <= support; ++tap) {
+            const auto sample = source(std::clamp(x + tap, 0, kWidth - 1), std::clamp(y + tap, 0, kHeight - 1));
+            for (std::size_t channel = 0; channel < total.size(); ++channel)
+                total[channel] +=
+                    static_cast<double>(weights[static_cast<std::size_t>(tap + support)]) * sample[channel];
+        }
+        return total;
+    };
+
+    const eval::EffectLibrary slang = eval::loadSlangEffectLibrary(slangSpvDir(), slangSrcDir());
+    const eval::EffectLibrary glsl = eval::glslEffectLibrary();
+    for (const double size : {101.0, 250.0}) {
+        SCOPED_TRACE(size);
+        rootGraph(doc).setParam(effect, "size", size);
+        const auto support = static_cast<int>(size);
+        const std::vector<float> weights = declaredGaussianWeights(size, 1);
+        const std::vector<float> legacyWeights = declaredGaussianWeights(100.0, 1);
+
+        const CpuImage cpuImage = evaluateCpuImage(doc, request);
+        const CpuImage slangImage = evaluateGpu(doc, request, slang, *boot.device, *boot.allocator)
+                                        .readBack(request.output, *boot.device, *boot.allocator);
+        const CpuImage glslImage = evaluateGpu(doc, request, glsl, *boot.device, *boot.allocator)
+                                       .readBack(request.output, *boot.device, *boot.allocator);
+        expectImagesClose(cpuImage, slangImage, kBlurTolerance34, "blur radius slang vs cpu");
+        expectImagesClose(cpuImage, glslImage, kBlurTolerance34, "blur radius glsl vs cpu");
+
+        double largestLegacyGap = 0.0;
+        for (int y = 0; y < slangImage.height(); ++y) {
+            for (int x = 0; x < slangImage.width(); ++x) {
+                const auto expected = declared(weights, support, x, y);
+                const auto legacy = declared(legacyWeights, 100, x, y);
+                for (std::size_t channel = 0; channel < expected.size(); ++channel) {
+                    ASSERT_NEAR(slangImage.pixel(x, y)[channel], expected[channel], kBlurTolerance34)
+                        << "slang channel " << channel << " at (" << x << "," << y << ")";
+                    ASSERT_NEAR(glslImage.pixel(x, y)[channel], expected[channel], kBlurTolerance34)
+                        << "glsl channel " << channel << " at (" << x << "," << y << ")";
+                    ASSERT_NEAR(cpuImage.pixel(x, y)[channel], expected[channel], kBlurTolerance34)
+                        << "cpu channel " << channel << " at (" << x << "," << y << ")";
+                    const double rendered = slangImage.pixel(x, y)[channel];
+                    largestLegacyGap = std::max(largestLegacyGap, std::fabs(rendered - legacy[channel]));
+                }
+            }
+        }
+        if (size >= 250.0) {
+            // The 250 kernel must also remain observably distinct from a
+            // silently capped 100 kernel. The analytic match covers 101 too.
+            EXPECT_GT(largestLegacyGap, 1e-2) << "radius " << size << " must not render as the legacy 100 kernel";
+        }
+    }
+    expectValidationClean(*boot.instance);
+}
+
+TEST(Effect, BlurLargeRadiusRegionCarriesItsWholeHaloAndMatchesFullFrameAtProxyScales) {
+    const Bootstrap boot = createBootstrap();
+    NEMO_SKIP_UNLESS_SLANG(boot);
+
+    Document doc = makeEffectDocument("blur", ParameterValues{{"channels", ChoiceValue{"RGB"}}}, false);
+    const NodeId effect = rootGraph(doc).nodeByName("effect")->id;
+    const Region domain{0, 0, 512, 320};
+    CommandStack commands(doc);
+    commands.push(setNetworkFormatCommand(doc.rootNetworkId(), ImageFormat{domain.width, domain.height, 1.0F}));
+    const Region region{20, 20, 64, 32};
+    const eval::EffectLibrary slang = eval::loadSlangEffectLibrary(slangSpvDir(), slangSrcDir());
+    const eval::EffectLibrary glsl = eval::glslEffectLibrary();
+
+    for (const int scale : {1, 4}) {
+        SCOPED_TRACE(scale);
+        for (const double size : {101.0, 250.0}) {
+            SCOPED_TRACE(size);
+            rootGraph(doc).setParam(effect, "size", size);
+            const int support = static_cast<int>(std::ceil(size / static_cast<double>(scale)));
+            const int halo = support * scale;  // the declared full-resolution halo
+            EvaluationRequest full = requestFor(doc, domain, 1);
+            full.samplingScale = scale;
+            EvaluationRequest roi = roiRequestFor(doc, region, domain.width, domain.height, 1);
+            roi.samplingScale = scale;
+            const Region raster{region.x / scale, region.y / scale, region.width / scale, region.height / scale};
+
+            const CpuImage fullPixels = evaluateGpu(doc, full, slang, *boot.device, *boot.allocator)
+                                            .readBack(full.output, *boot.device, *boot.allocator);
+            eval::GpuEvaluation regionEval = evaluateGpu(doc, roi, slang, *boot.device, *boot.allocator);
+            const CpuImage regionPixels = regionEval.readBack(roi.output, *boot.device, *boot.allocator);
+            const CpuImage glslPixels = evaluateGpu(doc, roi, glsl, *boot.device, *boot.allocator)
+                                            .readBack(roi.output, *boot.device, *boot.allocator);
+
+            expectRegionMatchesFullFrame(regionPixels, fullPixels, raster, kBlurTolerance34, "large-radius region");
+            expectImagesClose(regionPixels, glslPixels, kBlurTolerance34, "large-radius region front ends");
+            if (scale == 4) {
+                // The CPU reference is compared at the proxy scale, where its
+                // halo raster stays small; the core suite carries the scale-1
+                // radius evidence (EvaluationTests, BlurExecutesRadiiBeyond...).
+                expectImagesClose(evaluateCpuImage(doc, roi), regionPixels, kBlurTolerance34,
+                                  "large-radius region vs cpu");
+            }
+
+            // The input demand carries the whole declared radius — 250 (or 252
+            // rounded up to the scale-4 lattice) beyond the region on every
+            // side, clipped only by the domain. A silent cap at 100 would fall
+            // far short of that and fail here.
+            const PlanStep* plateStep = stepOfType(regionEval.plan, "testpattern");
+            ASSERT_NE(plateStep, nullptr);
+            const Region haloDemand = regionIntersection(
+                Region{region.x - halo, region.y - halo, region.width + 2 * halo, region.height + 2 * halo}, domain);
+            expectRegionContains(plateStep->region, haloDemand,
+                                 "the blur input carries the declared radius, not a legacy ceiling");
+        }
+    }
+    expectValidationClean(*boot.instance);
+}
+
+TEST(Effect, NativeGradeEqualEndpointsMatchIndependentArithmeticOnBothFrontEnds) {
+    const Bootstrap boot = createBootstrap();
+    NEMO_SKIP_UNLESS_SLANG(boot);
+
+    // The fixture's own values: R and G are at an exactly equal range (0.5 and
+    // 0.25), B has a normal 0..1 range and A is disabled. The mask's alpha 0.5
+    // at Mix 0.75 weighs the processed pixel 0.375, and clampBlack runs before
+    // that blend. The convention is derived here in plain double, so neither
+    // front end — and not the CPU reference — is another's oracle.
+    const auto expected = [](bool reverse, float mix) {
+        const std::array<float, 4> orig{0.25F, 0.5F, 0.75F, 1.0F};
+        // R: the shared endpoint 0.5 (its remaining controls are neutral).
+        // G: forward continues gain 2 and offset 0.1 on the shared endpoint
+        //    0.25 => 0.6; reverse produces the endpoint itself.
+        // B: the normal 0..1 range with gain 1 and offset 0 is the identity.
+        const std::array<float, 3> processed{0.5F, reverse ? 0.25F : 0.6F, orig[2]};
+        const float weight = 0.5F * mix;  // the mask's alpha 0.5 carries the Mix
+        std::array<float, 4> out = orig;
+        for (std::size_t channel = 0; channel < processed.size(); ++channel)
+            out[channel] = orig[channel] + (processed[channel] - orig[channel]) * weight;
+        return out;
+    };
+
+    for (const bool reverse : {false, true}) {
+        SCOPED_TRACE(reverse);
+        Document doc;
+        CommandStack commands(doc);
+        commands.push(setNetworkFormatCommand(doc.rootNetworkId(), ImageFormat{8, 6, 1.0F}));
+        rootGraph(doc).removeNode(rootGraph(doc).nodeByName("Output")->id);
+        const NodeId plate = rootGraph(doc).addNode("constcolor", "plate");
+        const NodeId mask = rootGraph(doc).addNode("constcolor", "mask");
+        const NodeId grade = rootGraph(doc).addNode("grade", "effect");
+        const NodeId output = rootGraph(doc).addNode("output", "result");
+        rootGraph(doc).setParam(plate, "color", ColorValue{{0.25F, 0.5F, 0.75F, 1.0F}});
+        rootGraph(doc).setParam(mask, "color", ColorValue{{0.0F, 0.0F, 0.0F, 0.5F}});
+        rootGraph(doc).setParam(grade, "blackpoint", ColorValue{{0.5F, 0.25F, 0.0F, 0.0F}});
+        rootGraph(doc).setParam(grade, "whitepoint", ColorValue{{0.5F, 0.25F, 1.0F, 1.0F}});
+        rootGraph(doc).setParam(grade, "gain", ColorValue{{1.0F, 2.0F, 1.0F, 1.0F}});
+        rootGraph(doc).setParam(grade, "offset", ColorValue{{0.0F, 0.1F, 0.0F, 0.0F}});
+        rootGraph(doc).setParam(grade, "reverse", reverse);
+        rootGraph(doc).setParam(grade, "maskChannel", ChoiceValue{"A"});
+        (void)rootGraph(doc).connect({plate, 0}, {grade, 0});
+        (void)rootGraph(doc).connect({mask, 0}, {grade, 1});
+        (void)rootGraph(doc).connect({grade, 0}, {output, 0});
+
+        const EvaluationRequest request = requestFor(doc, {0, 0, 8, 6}, 0);
+        const eval::EffectLibrary slang = eval::loadSlangEffectLibrary(slangSpvDir(), slangSrcDir());
+        const eval::EffectLibrary glsl = eval::glslEffectLibrary();
+        // 0.75 is inside the old hard range; 2.5 makes the same lerp extrapolate
+        // (weight 1.25), which the bounded kernels used to clamp at the endpoint.
+        for (const float mix : {0.75F, 2.5F}) {
+            SCOPED_TRACE(mix);
+            rootGraph(doc).setParam(grade, "mix", static_cast<double>(mix));
+            const CpuImage cpuImage = evaluateCpuImage(doc, request);
+            const CpuImage slangImage = evaluateGpu(doc, request, slang, *boot.device, *boot.allocator)
+                                            .readBack(request.output, *boot.device, *boot.allocator);
+            const CpuImage glslImage = evaluateGpu(doc, request, glsl, *boot.device, *boot.allocator)
+                                           .readBack(request.output, *boot.device, *boot.allocator);
+            expectImagesClose(cpuImage, slangImage, kGradeTolerance34, "grade mix slang vs cpu");
+            expectImagesClose(cpuImage, glslImage, kGradeTolerance34, "grade mix glsl vs cpu");
+            const std::array<float, 4> expectation = expected(reverse, mix);
+            const auto expectEveryPixel = [&](const CpuImage& image, const char* frontEnd) {
+                ASSERT_EQ(image.width(), 8) << frontEnd;
+                ASSERT_EQ(image.height(), 6) << frontEnd;
+                for (int y = 0; y < image.height(); ++y) {
+                    for (int x = 0; x < image.width(); ++x) {
+                        for (std::size_t channel = 0; channel < expectation.size(); ++channel) {
+                            EXPECT_NEAR(image.pixel(x, y)[channel], expectation[channel], kGradeTolerance34)
+                                << frontEnd << " channel " << channel << " at (" << x << "," << y << ")";
+                        }
+                    }
+                }
+            };
+            expectEveryPixel(cpuImage, "cpu");
+            expectEveryPixel(slangImage, "slang");
+            expectEveryPixel(glslImage, "glsl");
+        }
+    }
+    expectValidationClean(*boot.instance);
+}
+
+TEST(Effect, NativeTransformMixAboveOneKeepsTheExtrapolatedOriginalOnBothFrontEnds) {
+    const Bootstrap boot = createBootstrap();
+    NEMO_SKIP_UNLESS_SLANG(boot);
+
+    // Translated so half the frame is source-only: at Mix 2 the declared blend
+    // is source + (processed - source) * 2, which keeps the original term in the
+    // vacated area (2 * 0 - source = -source) instead of clamping to the fully
+    // processed pixel. The expectation comes from the declared TestPattern
+    // gradient, so no evaluator is another's oracle.
+    constexpr int kWidth = 8;
+    Document doc = makeEffectDocument("transform",
+                                      ParameterValues{{"translateX", 4.0},
+                                                      {"translateY", 0.0},
+                                                      {"scale", 1.0},
+                                                      {"rotate", 0.0},
+                                                      {"filter", ChoiceValue{"Nearest"}},
+                                                      {"mix", 2.0}},
+                                      false);
+    CommandStack commands(doc);
+    commands.push(setNetworkFormatCommand(doc.rootNetworkId(), ImageFormat{kWidth, 1, 1.0F}));
+    const EvaluationRequest request = requestFor(doc, {0, 0, kWidth, 1}, 0);
+    const auto source = [](int x) { return static_cast<float>(x) / (kWidth - 1); };
+    const eval::EffectLibrary slang = eval::loadSlangEffectLibrary(slangSpvDir(), slangSrcDir());
+    const eval::EffectLibrary glsl = eval::glslEffectLibrary();
+    const CpuImage cpuImage = evaluateCpuImage(doc, request);
+    const CpuImage slangImage = evaluateGpu(doc, request, slang, *boot.device, *boot.allocator)
+                                    .readBack(request.output, *boot.device, *boot.allocator);
+    const CpuImage glslImage = evaluateGpu(doc, request, glsl, *boot.device, *boot.allocator)
+                                   .readBack(request.output, *boot.device, *boot.allocator);
+    expectImagesClose(cpuImage, slangImage, kTransformTolerance34, "transform mix slang vs cpu");
+    expectImagesClose(cpuImage, glslImage, kTransformTolerance34, "transform mix glsl vs cpu");
+    const auto expectEveryPixel = [&](const CpuImage& image, const char* frontEnd) {
+        ASSERT_EQ(image.width(), kWidth) << frontEnd;
+        ASSERT_EQ(image.height(), 1) << frontEnd;
+        for (int x = 0; x < kWidth; ++x) {
+            // Positive translateX moves content right: dst x samples src x - 4,
+            // and a sample the source does not hold is transparent black.
+            const float processed = x >= 4 ? source(x - 4) : 0.0F;
+            EXPECT_NEAR(image.pixel(x, 0)[0], source(x) + (processed - source(x)) * 2.0F, kTransformTolerance34)
+                << frontEnd << " at x=" << x;
+        }
+    };
+    expectEveryPixel(cpuImage, "cpu");
+    expectEveryPixel(slangImage, "slang");
+    expectEveryPixel(glslImage, "glsl");
+    EXPECT_LT(slangImage.pixel(1, 0)[0], 0.0F) << "the vacated area must keep the original term, not disappear";
+    expectValidationClean(*boot.instance);
+}
+
+TEST(Effect, NegativeTransformScalePreservesMirroredPixelsOnBothFrontEnds) {
+    const Bootstrap boot = createBootstrap();
+    NEMO_SKIP_UNLESS_SLANG(boot);
+    const auto slang = eval::loadSlangEffectLibrary(slangSpvDir(), slangSrcDir());
+    const auto glsl = eval::glslEffectLibrary();
+    for (const auto* filter : {"Nearest", "Cubic"}) {
+        SCOPED_TRACE(filter);
+        auto doc = makeEffectDocument("transform", {{"scale", -1.0}, {"filter", ChoiceValue{filter}}}, false);
+        CommandStack commands(doc);
+        commands.push(setNetworkFormatCommand(doc.rootNetworkId(), ImageFormat{8, 1, 1.0F}));
+        const auto request = requestFor(doc, {0, 0, 8, 1}, 0);
+        const auto check = [](const CpuImage& image) {
+            for (int x = 0; x < 8; ++x) {
+                EXPECT_NEAR(image.pixel(x, 0)[0], static_cast<float>(7 - x) / 7.0F, kTransformTolerance34);
+                EXPECT_NEAR(image.pixel(x, 0)[3], 1.0F, kTransformTolerance34);
+            }
+        };
+        check(evaluateCpuImage(doc, request));
+        for (const auto* library : {&slang, &glsl})
+            check(evaluateGpu(doc, request, *library, *boot.device, *boot.allocator)
+                      .readBack(request.output, *boot.device, *boot.allocator));
+    }
+    expectValidationClean(*boot.instance);
+}
+
+TEST(Effect, BlurRejectsDeviceOversizedWeightsDuringPreparation) {
+    const Bootstrap boot = createBootstrap();
+    NEMO_SKIP_UNLESS_SLANG(boot);
+    const auto slang = eval::loadSlangEffectLibrary(slangSpvDir(), slangSrcDir());
+    const auto glsl = eval::glslEffectLibrary();
+    const float radius =
+        std::nextafter(static_cast<float>(boot.device->properties().limits.maxStorageBufferRange / (2 * sizeof(float))),
+                       std::numeric_limits<float>::infinity());
+    auto doc = makeEffectDocument("blur", {{"size", static_cast<double>(radius)}}, false);
+    CommandStack commands(doc);
+    commands.push(setNetworkFormatCommand(doc.rootNetworkId(), ImageFormat{1, 1, 1.0F}));
+    const auto request = requestFor(doc, {0, 0, 1, 1}, 0);
+    for (const auto* library : {&slang, &glsl}) {
+        try {
+            static_cast<void>(evaluateGpu(doc, request, *library, *boot.device, *boot.allocator));
+            FAIL() << "device-sized weight tables must be refused before their host allocation";
+        } catch (const EvaluationException& error) {
+            EXPECT_NE(std::string(error.what()).find("effect"), std::string::npos);
+            EXPECT_NE(std::string(error.what()).find("size"), std::string::npos);
+        }
+    }
     expectValidationClean(*boot.instance);
 }
 

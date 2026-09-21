@@ -125,10 +125,6 @@ Item {
         hasMaximum: componentIndex >= 0 && channelEditor.parameter && channelEditor.parameter.maximum !== undefined
         minimum: hasMinimum ? Number(channelEditor.parameter.minimum) : 0
         maximum: hasMaximum ? Number(channelEditor.parameter.maximum) : 0
-        hasSoftMinimum: componentIndex >= 0 || !channelEditor.mixedLinked
-        hasSoftMaximum: hasSoftMinimum
-        softMinimum: channelEditor.trackFrom
-        softMaximum: channelEditor.trackTo
         step: channelEditor.step
         decimals: channelEditor.decimals
         label: channelEditor.fieldLabel + (componentIndex < 0 ? (channelEditor.mixedLinked ? (channelEditor.multiplicative ? " linked factor" : " linked offset") : " RGB") : " " + ["R", "G", "B", "Alpha"][componentIndex])
@@ -292,15 +288,6 @@ Item {
                     radius: channelEditor.theme.smallRadius
                 }
             }
-        }
-
-        Text {
-            visible: channelEditor.errorText.length > 0
-            Layout.fillWidth: true
-            text: channelEditor.errorText
-            color: channelEditor.theme.errorText
-            font.pixelSize: channelEditor.textSize
-            wrapMode: Text.WordWrap
         }
     }
 }

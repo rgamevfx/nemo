@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <limits>
 #include <memory>
 #include <span>
 #include <string>
@@ -910,6 +911,169 @@ TEST(NativeEffectTest, GradeReverseRoundTripsSignedHdrWithoutClamps) {
     EXPECT_FLOAT_EQ(roundTrip[3], 1.0F);
 }
 
+TEST(NativeEffectTest, GradeEqualEndpointsMapChannelsToTheirSharedValue) {
+    Document document = makeDocument({{"constcolor", "plate"}, {"grade", "grade"}, {"output", "out"}});
+    Graph& graph = rootGraph(document);
+    const NodeId plate = graph.nodeByName("plate")->id;
+    const NodeId grade = graph.nodeByName("grade")->id;
+    graph.setParam(plate, "color", ColorValue{{0.25F, 0.5F, 0.75F, 1.0F}});
+    connect(graph, "plate", "grade");
+    connect(graph, "grade", "out");
+    const EvaluationRequest request = fullFrameRequest(document, 0, 1, 1);
+    const auto render = [&]() { return evaluateCpu(document, request).image.pixel(0, 0); };
+
+    // Neutral remaining settings: every enabled channel is its own shared
+    // endpoint whatever the source holds (the issue #103 0.5 constant-gray case).
+    graph.setParam(grade, "blackpoint", ColorValue{{0.5F, 0.5F, 0.5F, 0.5F}});
+    graph.setParam(grade, "whitepoint", ColorValue{{0.5F, 0.5F, 0.5F, 0.5F}});
+    EXPECT_EQ(render(), (std::array<float, 4>{0.5F, 0.5F, 0.5F, 1.0F}));
+
+    // Shared endpoints that differ per channel give that constant color, and a
+    // shared endpoint of 0 is black.
+    graph.setParam(grade, "blackpoint", ColorValue{{0.0F, 0.25F, 0.75F, 0.0F}});
+    graph.setParam(grade, "whitepoint", ColorValue{{0.0F, 0.25F, 0.75F, 1.0F}});
+    EXPECT_EQ(render(), (std::array<float, 4>{0.0F, 0.25F, 0.75F, 1.0F}));
+
+    // The remaining controls continue on the shared endpoint: ramp 0.5, gain 2,
+    // multiply 1, offset 0.25, gamma 2 => signedPow(0.5*2 + 0.25, 1/2).
+    graph.setParam(grade, "blackpoint", ColorValue{{0.5F, 0.5F, 0.5F, 0.5F}});
+    graph.setParam(grade, "whitepoint", ColorValue{{0.5F, 0.5F, 0.5F, 0.5F}});
+    graph.setParam(grade, "gain", ColorValue{{2.0F, 2.0F, 2.0F, 2.0F}});
+    graph.setParam(grade, "offset", ColorValue{{0.25F, 0.25F, 0.25F, 0.25F}});
+    graph.setParam(grade, "gamma", ColorValue{{2.0F, 2.0F, 2.0F, 2.0F}});
+    EXPECT_NEAR(render()[0], std::sqrt(1.25F), 1e-6F);
+    EXPECT_NEAR(render()[1], std::sqrt(1.25F), 1e-6F);
+    // Clamps still run after the operation (sqrt(1.25) > 1).
+    graph.setParam(grade, "clampWhite", true);
+    EXPECT_FLOAT_EQ(render()[0], 1.0F);
+    graph.setParam(grade, "clampWhite", false);
+
+    // Only the selected channels take the convention; unselected channels map
+    // normally and alpha is an independent channel (R and A share endpoints, B
+    // has a normal range).
+    graph.setParam(grade, "gain", ColorValue{{1.0F, 1.0F, 1.0F, 1.0F}});
+    graph.setParam(grade, "offset", ColorValue{{0.0F, 0.0F, 0.0F, 0.0F}});
+    graph.setParam(grade, "gamma", ColorValue{{1.0F, 1.0F, 1.0F, 1.0F}});
+    graph.setParam(grade, "blackpoint", ColorValue{{0.5F, 0.0F, 0.0F, 0.25F}});
+    graph.setParam(grade, "whitepoint", ColorValue{{0.5F, 1.0F, 0.5F, 0.25F}});
+    graph.setParam(grade, "channels", ChoiceValue{"R"});
+    EXPECT_EQ(render(), (std::array<float, 4>{0.5F, 0.5F, 0.75F, 1.0F}));
+    graph.setParam(grade, "channels", ChoiceValue{"RGB"});
+    // R is the constant 0.5; G ramps 0.5/1 to 0.5; B ramps 0.75/0.5 to 1.5.
+    EXPECT_EQ(render(), (std::array<float, 4>{0.5F, 0.5F, 1.5F, 1.0F}));
+    graph.setParam(grade, "channels", ChoiceValue{"Alpha"});
+    EXPECT_EQ(render(), (std::array<float, 4>{0.25F, 0.5F, 0.75F, 0.25F}));
+    graph.setParam(grade, "channels", ChoiceValue{"None"});
+    EXPECT_EQ(render(), (std::array<float, 4>{0.25F, 0.5F, 0.75F, 1.0F}));
+}
+
+TEST(NativeEffectTest, GradeReverseAtEqualEndpointsUsesTheSharedEndpoint) {
+    Document document = makeDocument({{"constcolor", "plate"}, {"grade", "grade"}, {"output", "out"}});
+    Graph& graph = rootGraph(document);
+    const NodeId plate = graph.nodeByName("plate")->id;
+    const NodeId grade = graph.nodeByName("grade")->id;
+    graph.setParam(plate, "color", ColorValue{{0.25F, 0.5F, 0.75F, 1.0F}});
+    connect(graph, "plate", "grade");
+    connect(graph, "grade", "out");
+    const EvaluationRequest request = fullFrameRequest(document, 0, 1, 1);
+    const auto render = [&]() { return evaluateCpu(document, request).image.pixel(0, 0); };
+
+    // R and G are at an equal range, so reverse produces their shared endpoint
+    // (the approved fallback convention), not an inverse and not a rejected
+    // edit; the remaining controls are set to values an inverse would have
+    // moved. B still reverses normally: a = 2, b = 0, so 0.75 -> 0.375.
+    graph.setParam(grade, "reverse", true);
+    graph.setParam(grade, "blackpoint", ColorValue{{0.5F, 0.5F, 0.0F, 0.0F}});
+    graph.setParam(grade, "whitepoint", ColorValue{{0.5F, 0.5F, 1.0F, 1.0F}});
+    graph.setParam(grade, "gain", ColorValue{{2.0F, 2.0F, 2.0F, 2.0F}});
+    graph.setParam(grade, "lift", ColorValue{{0.0F, 0.5F, 0.0F, 0.0F}});
+    graph.setParam(grade, "offset", ColorValue{{0.25F, 0.0F, 0.0F, 0.0F}});
+    graph.setParam(grade, "gamma", ColorValue{{2.0F, 2.0F, 1.0F, 1.0F}});
+    EXPECT_NEAR(render()[0], 0.5F, 1e-6F);
+    EXPECT_NEAR(render()[1], 0.5F, 1e-6F);
+    EXPECT_NEAR(render()[2], 0.375F, 1e-6F);
+    EXPECT_FLOAT_EQ(render()[3], 1.0F);
+
+    // The existing clamps apply to the fallback value...
+    graph.setParam(grade, "blackpoint", ColorValue{{-0.25F, 0.5F, 0.0F, 0.0F}});
+    graph.setParam(grade, "whitepoint", ColorValue{{-0.25F, 0.5F, 1.0F, 1.0F}});
+    EXPECT_FLOAT_EQ(render()[0], 0.0F);
+    graph.setParam(grade, "clampWhite", true);
+    graph.setParam(grade, "blackpoint", ColorValue{{1.5F, 0.5F, 0.0F, 0.0F}});
+    graph.setParam(grade, "whitepoint", ColorValue{{1.5F, 0.5F, 1.0F, 1.0F}});
+    EXPECT_FLOAT_EQ(render()[0], 1.0F);
+    graph.setParam(grade, "clampWhite", false);
+
+    // ...and Mask/Mix still blends it against the untouched original.
+    graph.setParam(grade, "blackpoint", ColorValue{{0.5F, 0.5F, 0.0F, 0.0F}});
+    graph.setParam(grade, "whitepoint", ColorValue{{0.5F, 0.5F, 1.0F, 1.0F}});
+    graph.setParam(grade, "mix", 0.5);
+    EXPECT_NEAR(render()[0], 0.5F * 0.25F + 0.5F * 0.5F, 1e-6F);
+    graph.setParam(grade, "mix", 1.0);
+    EXPECT_NEAR(render()[0], 0.5F, 1e-6F);
+}
+
+TEST(NativeEffectTest, GradeNearEqualEndpointsKeepTheNormalMapping) {
+    Document document = makeDocument({{"constcolor", "plate"}, {"grade", "grade"}, {"output", "out"}});
+    Graph& graph = rootGraph(document);
+    const NodeId plate = graph.nodeByName("plate")->id;
+    const NodeId grade = graph.nodeByName("grade")->id;
+    graph.setParam(plate, "color", ColorValue{{0.5F, 0.5F, 0.5F, 1.0F}});
+    connect(graph, "plate", "grade");
+    connect(graph, "grade", "out");
+    const EvaluationRequest request = fullFrameRequest(document, 0, 1, 1);
+    const auto render = [&]() { return evaluateCpu(document, request).image.pixel(0, 0); };
+
+    // 2^-20 is a range that is exactly representable in float and far smaller
+    // than any tolerance band: near-equal, not equal, so it keeps normal
+    // mapping while exact equality is the constant case (no epsilon).
+    constexpr float kRange = 9.5367431640625e-7F;
+    graph.setParam(grade, "blackpoint", ColorValue{{0.5F, 0.0F, 0.0F, 0.0F}});
+    graph.setParam(grade, "whitepoint", ColorValue{{0.5F + kRange, 1.0F, 1.0F, 1.0F}});
+    EXPECT_FLOAT_EQ(render()[0], 0.0F);  // the blackpoint itself maps to 0
+    graph.setParam(plate, "color", ColorValue{{0.75F, 0.5F, 0.5F, 1.0F}});
+    EXPECT_FLOAT_EQ(render()[0], 262144.0F);  // 0.25 * 2^20, the normal ramp
+    graph.setParam(grade, "whitepoint", ColorValue{{0.5F, 1.0F, 1.0F, 1.0F}});
+    EXPECT_FLOAT_EQ(render()[0], 0.5F);  // exact equality: the shared endpoint
+
+    // Forward multiplication by zero stays usable: the equal-range channel
+    // produces the remaining constant, and its reverse (the approved fallback)
+    // never divides, so it is not refused either.
+    graph.setParam(grade, "multiply", ColorValue{{0.0F, 1.0F, 1.0F, 1.0F}});
+    graph.setParam(grade, "lift", ColorValue{{0.1F, 0.0F, 0.0F, 0.0F}});
+    graph.setParam(grade, "offset", ColorValue{{0.05F, 0.0F, 0.0F, 0.0F}});
+    EXPECT_NEAR(render()[0], 0.15F, 1e-6F);
+    graph.setParam(grade, "reverse", true);
+    EXPECT_NEAR(render()[0], 0.5F, 1e-6F);
+}
+
+TEST(NativeEffectTest, GradeEqualEndpointConstantStillBlendsWithSourceVariation) {
+    Document document = makeDocument({{"testpattern", "plate"}, {"grade", "grade"}, {"output", "out"}}, 8, 1);
+    Graph& graph = rootGraph(document);
+    const NodeId grade = graph.nodeByName("grade")->id;
+    graph.setParam(grade, "channels", ChoiceValue{"RGB"});
+    graph.setParam(grade, "blackpoint", ColorValue{{0.5F, 0.5F, 0.5F, 0.0F}});
+    graph.setParam(grade, "whitepoint", ColorValue{{0.5F, 0.5F, 0.5F, 1.0F}});
+    graph.setParam(grade, "mix", 0.5);
+    connect(graph, "plate", "grade");
+    connect(graph, "grade", "out");
+
+    const CpuImage rendered = evaluateCpu(document, fullFrameRequest(document, 0, 8, 1)).image;
+    // Full Mix would be the constant 0.5 everywhere; Mix 0.5 keeps half the
+    // source, so the plate's gradient survives: out = src + (0.5 - src) * 0.5.
+    EXPECT_NEAR(rendered.pixel(0, 0)[0], 0.25F, 1e-6F);
+    EXPECT_NEAR(rendered.pixel(7, 0)[0], 0.75F, 1e-6F);
+    EXPECT_LT(rendered.pixel(0, 0)[0], rendered.pixel(7, 0)[0]);
+    EXPECT_FLOAT_EQ(rendered.pixel(0, 0)[3], 1.0F);
+
+    // Mix above one extrapolates the same declared blend instead of clamping at
+    // the endpoint: out = src + (0.5 - src) * 2.
+    graph.setParam(grade, "mix", 2.0);
+    const CpuImage extrapolated = evaluateCpu(document, fullFrameRequest(document, 0, 8, 1)).image;
+    EXPECT_NEAR(extrapolated.pixel(0, 0)[0], 1.0F, 1e-6F);
+    EXPECT_NEAR(extrapolated.pixel(7, 0)[0], 0.0F, 1e-6F);
+}
+
 TEST(NativeEffectTest, GradeClampsAndRejectsInvalidCoefficients) {
     Document document = makeDocument({{"constcolor", "plate"}, {"grade", "grade"}, {"output", "out"}});
     Graph& graph = rootGraph(document);
@@ -937,18 +1101,23 @@ TEST(NativeEffectTest, GradeClampsAndRejectsInvalidCoefficients) {
     graph.setParam(grade, "clampWhite", false);
     EXPECT_EQ(render(), (std::array<float, 4>{-1.0F, 1.0F, 3.0F, 1.0F}));
 
-    // Reverse needs an invertible ramp: a == 0 must be rejected.
+    // Reverse needs an invertible ramp: a == 0 must be rejected. Forward is
+    // constant there, so no inverse exists and none is fabricated (issue #103
+    // approved only the equal-endpoint fallback).
     graph.setParam(grade, "reverse", true);
     graph.setParam(grade, "gain", ColorValue{{0.0F, 0.0F, 0.0F, 0.0F}});
     EXPECT_THROW(static_cast<void>(evaluateCpu(document, request)), EvaluationException);
-    // Whitepoint == blackpoint is degenerate even forward.
+    // Gamma must be positive: the exponent is 1/gamma forward and gamma in
+    // reverse, so zero or negative is a different, unrepresentable operation.
     graph.setParam(grade, "reverse", false);
     graph.setParam(grade, "gain", ColorValue{{1.0F, 1.0F, 1.0F, 1.0F}});
-    graph.setParam(grade, "whitepoint", ColorValue{{0.0F, 0.0F, 0.0F, 0.0F}});
-    EXPECT_THROW(static_cast<void>(evaluateCpu(document, request)), EvaluationException);
-    // Gamma must be positive.
-    graph.setParam(grade, "whitepoint", ColorValue{{1.0F, 1.0F, 1.0F, 1.0F}});
     graph.setParam(grade, "gamma", ColorValue{{0.0F, 1.0F, 1.0F, 1.0F}});
+    EXPECT_THROW(static_cast<void>(evaluateCpu(document, request)), EvaluationException);
+    // A nonzero but unrepresentable ramp is still a refusal, not a silently
+    // substituted slope.
+    graph.setParam(grade, "gamma", ColorValue{{1.0F, 1.0F, 1.0F, 1.0F}});
+    graph.setParam(grade, "blackpoint", ColorValue{{0.0F, 0.0F, 0.0F, 0.0F}});
+    graph.setParam(grade, "whitepoint", ColorValue{{1.0e-40F, 1.0F, 1.0F, 1.0F}});
     EXPECT_THROW(static_cast<void>(evaluateCpu(document, request)), EvaluationException);
 }
 
@@ -1105,6 +1274,107 @@ TEST(NativeEffectTest, BlurIsExactGaussianWithEdgeClampAndChannelSelection) {
         const float expected = 0.5F * input.pixel(x, 0)[0] + 0.5F * blurred.pixel(x, 0)[0];
         EXPECT_NEAR(masked.pixel(x, 0)[0], expected, 1e-5F) << "masked blur x=" << x;
     }
+}
+
+TEST(NativeEffectTest, BlurExecutesRadiiBeyondTheLegacyCeiling) {
+    // 101 and 250 were unreachable while `size` had a hard 100 maximum: the
+    // authored radius is executed exactly, never saturated at that value or at
+    // a replacement ceiling. The row is wide enough for the support to stay
+    // interior to the impulse.
+    constexpr int kWidth = 601;
+    constexpr int kImpulse = 300;
+    CpuImage input = solidImage(kWidth, 1, {0.0F, 0.0F, 0.0F, 1.0F});
+    input.setPixel(kImpulse, 0, {1.0F, 0.0F, 0.0F, 1.0F});
+    const ParameterValues rgb = {{"channels", ChoiceValue{"RGB"}}};
+    for (const double size : {101.0, 250.0}) {
+        SCOPED_TRACE(size);
+        ParameterValues params = rgb;
+        params["size"] = size;
+        const CpuImage blurred = applyNativeEffect("blur", params, input);
+        const auto support = static_cast<int>(size);
+        const std::vector<float> weights = gaussianWeights(static_cast<float>(size));
+        ASSERT_EQ(weights.size(), static_cast<std::size_t>(2 * support + 1));
+        // Every tap of the declared Gaussian, out to the outermost one, carries
+        // the impulse's weight on both sides of it.
+        for (const int offset : {0, 1, 2, support / 2, support}) {
+            const float expected = weights[static_cast<std::size_t>(offset + support)];
+            EXPECT_NEAR(blurred.pixel(kImpulse + offset, 0)[0], expected, 1e-6F);
+            EXPECT_NEAR(blurred.pixel(kImpulse - offset, 0)[0], expected, 1e-6F);
+        }
+        // One pixel beyond the support the impulse is gone, so the executed
+        // radius really is the authored one.
+        EXPECT_NEAR(blurred.pixel(kImpulse + support + 1, 0)[0], 0.0F, 1e-7F);
+        // ...and the kernel still normalizes to one across the whole radius
+        // (the budget is the float weight normalization, ~n*eps).
+        double total = 0.0;
+        for (int x = 0; x < kWidth; ++x)
+            total += blurred.pixel(x, 0)[0];
+        EXPECT_NEAR(total, 1.0, 2e-4) << "normalized weights at radius " << size;
+        EXPECT_FLOAT_EQ(blurred.pixel(kImpulse, 0)[3], 1.0F);
+    }
+}
+
+TEST(NativeEffectTest, BlurTinyRadiusStaysFiniteAndReachesTheIdentityLimit) {
+    // A radius whose sigma underflows in float: the declared weights are
+    // computed in double, so the limit is the exact 3-tap identity the Gaussian
+    // converges to (a float sigma would divide 0/0 into NaN weights and paint
+    // the whole image NaN).
+    constexpr int kWidth = 5;
+    CpuImage input = solidImage(kWidth, 1, {0.0F, 0.0F, 0.0F, 1.0F});
+    input.setPixel(2, 0, {1.0F, 0.5F, 0.25F, 1.0F});
+    const ParameterValues params{{"size", static_cast<double>(std::numeric_limits<float>::denorm_min())},
+                                 {"channels", ChoiceValue{"RGB"}}};
+    const CpuImage blurred = applyNativeEffect("blur", params, input);
+    for (int x = 0; x < kWidth; ++x)
+        EXPECT_EQ(blurred.pixel(x, 0), input.pixel(x, 0)) << "x=" << x;
+}
+
+TEST(NativeEffectTest, TransformMixAboveOneKeepsTheExtrapolatedOriginal) {
+    // Translated past part of the frame, the vacated area is source-only: the
+    // declared blend `source + (processed - source) * mix` keeps the original
+    // with weight 1 - mix, so at Mix 2 those pixels are the negated source
+    // rather than transparent black — and the described output must still cover
+    // them because the original term survives for any Mix != 1.
+    Document document = makeDocument({{"testpattern", "plate"}, {"transform", "move"}, {"output", "out"}}, 8, 1);
+    Graph& graph = rootGraph(document);
+    const NodeId move = graph.nodeByName("move")->id;
+    graph.setParam(move, "translateX", 4.0);
+    graph.setParam(move, "filter", ChoiceValue{"Nearest"});
+    graph.setParam(move, "mix", 2.0);
+    connect(graph, "plate", "move");
+    connect(graph, "move", "out");
+
+    const CpuImage rendered = evaluateCpu(document, fullFrameRequest(document, 0, 8, 1)).image;
+    const auto source = [](int x) { return static_cast<float>(x) / 7.0F; };
+    for (int x = 0; x < 8; ++x) {
+        // Positive translateX moves content right, so dst x samples src x - 4,
+        // and a sample the source does not hold is transparent black.
+        const float processed = x >= 4 ? source(x - 4) : 0.0F;
+        EXPECT_NEAR(rendered.pixel(x, 0)[0], source(x) + (processed - source(x)) * 2.0F, 1e-6F) << "x=" << x;
+    }
+    EXPECT_FLOAT_EQ(rendered.pixel(1, 0)[0], -1.0F / 7.0F);
+    EXPECT_LT(rendered.pixel(1, 0)[0], 0.0F);
+}
+
+TEST(NativeEffectTest, BlurMixAboveOneExtrapolatesAgainstTheOriginal) {
+    // The same declared blend on Blur's filtered result: at Mix 2 each pixel is
+    // source + (filtered - source) * 2, so the impulse's own sample goes
+    // negative instead of being clamped to the filtered value.
+    constexpr int kWidth = 9;
+    constexpr int kImpulse = 4;
+    CpuImage input = solidImage(kWidth, 1, {0.0F, 0.0F, 0.0F, 1.0F});
+    input.setPixel(kImpulse, 0, {1.0F, 0.0F, 0.0F, 1.0F});
+    const CpuImage blended = applyNativeEffect(
+        "blur", ParameterValues{{"size", 3.0}, {"channels", ChoiceValue{"RGB"}}, {"mix", 2.0}}, input);
+    const std::vector<float> weights = gaussianWeights(3.0F);
+    for (int x = 0; x < kWidth; ++x) {
+        const int tap = x - kImpulse;
+        const float filtered = std::fabs(tap) <= 3 ? weights[static_cast<std::size_t>(tap + 3)] : 0.0F;
+        const float source = x == kImpulse ? 1.0F : 0.0F;
+        EXPECT_NEAR(blended.pixel(x, 0)[0], source + (filtered - source) * 2.0F, 1e-5F) << "x=" << x;
+    }
+    EXPECT_LT(blended.pixel(kImpulse, 0)[0], 0.0F);
+    EXPECT_FLOAT_EQ(blended.pixel(kImpulse, 0)[3], 1.0F);
 }
 
 TEST(NativeEffectTest, TransformSelectsFiltersAndMapsCoordinates) {
@@ -1473,6 +1743,132 @@ TEST(RegionalEvaluationTest, BlurRegionMatchesDeclaredGaussianIncludingImageBord
         }
     }
     expectWindowMatchesWholeFrame(interiorEvaluation.image, wholeFrame.image, interior, 1);
+}
+
+TEST(RegionalEvaluationTest, BlurLargeRadiusRegionMatchesDeclaredKernelAtProxyScale) {
+    Document document = makeDocument({{"testpattern", "plate"}, {"blur", "soften"}, {"output", "out"}}, 1024, 640);
+    Graph& graph = rootGraph(document);
+    const NodeId soften = graph.nodeByName("soften")->id;
+    graph.setParam(soften, "size", 250.0);
+    graph.setParam(soften, "channels", ChoiceValue{"RGB"});
+    connect(graph, "plate", "soften");
+    connect(graph, "soften", "out");
+    // The authored radius survives authoring: no catalog ceiling, and nothing
+    // rewrote it into a replacement maximum.
+    EXPECT_DOUBLE_EQ(std::get<double>(graph.nodeByName("soften")->params.at("size")), 250.0);
+
+    constexpr int kDomainWidth = 1024;
+    constexpr int kDomainHeight = 640;
+    constexpr int kScale = 4;
+    constexpr int kSupport = 63;        // ceil(250 / 4) raster samples per axis
+    constexpr int kLegacySupport = 25;  // the same radius at the legacy 100 cap
+    const int rasterWidth = kDomainWidth / kScale;
+    const int rasterHeight = kDomainHeight / kScale;
+    const std::vector<float> weights = gaussianWeights(250.0F, static_cast<float>(kScale));
+    const std::vector<float> legacyWeights = gaussianWeights(100.0F, static_cast<float>(kScale));
+    // The declared separable filter over the TestPattern's own math, evaluated
+    // in double here. R (a horizontal gradient) and B (the frame-0 bar, whose
+    // edge sits at full-resolution x 64) vary along x only, so one diagonal sum
+    // of the normalized weights is exactly the separable result with the
+    // clamp-to-edge border — the identity the scale-1 border test already
+    // relies on. No evaluator is the oracle.
+    const auto filtered = [&](const std::vector<float>& tapWeights, int support, int rasterX, int rasterY,
+                              std::size_t channel) {
+        double total = 0.0;
+        for (int tap = -support; tap <= support; ++tap) {
+            const int x = std::clamp(rasterX + tap, 0, rasterWidth - 1);
+            const int y = std::clamp(rasterY + tap, 0, rasterHeight - 1);
+            total += static_cast<double>(tapWeights[static_cast<std::size_t>(tap + support)]) *
+                     testPatternPixel(x * kScale, y * kScale, kDomainWidth, kDomainHeight)[channel];
+        }
+        return static_cast<float>(total);
+    };
+
+    // A region against the top-left border, whose halo the domain clips, and one
+    // straddling the bar's edge: both sample the channels the kernel's own
+    // support shapes.
+    for (const Region region : {Region{0, 0, 24, 16}, Region{48, 296, 24, 16}}) {
+        SCOPED_TRACE(region.x);
+        const auto evaluation =
+            evaluateCpu(document, windowRequest(document, "out", region, kScale, kDomainWidth, kDomainHeight));
+        expectCoverageInvariants(evaluation.plan, region, kScale, kDomainWidth, kDomainHeight);
+        float largestLegacyGap = 0.0F;
+        for (int y = 0; y < evaluation.image.height(); ++y) {
+            for (int x = 0; x < evaluation.image.width(); ++x) {
+                const int rasterX = region.x / kScale + x;
+                const int rasterY = region.y / kScale + y;
+                for (const std::size_t channel : {std::size_t{0}, std::size_t{2}}) {
+                    const float expected = filtered(weights, kSupport, rasterX, rasterY, channel);
+                    EXPECT_NEAR(evaluation.image.pixel(x, y)[channel], expected, 1e-4F)
+                        << "channel " << channel << " at (" << x << "," << y << ")";
+                    const float legacyGap =
+                        std::fabs(evaluation.image.pixel(x, y)[channel] -
+                                  filtered(legacyWeights, kLegacySupport, rasterX, rasterY, channel));
+                    largestLegacyGap = std::max(largestLegacyGap, legacyGap);
+                }
+            }
+        }
+        // The two declared kernels differ far beyond the float budget at these
+        // samples, so agreeing with 250 is what proves the authored radius ran
+        // instead of a silent cap at 100.
+        EXPECT_GT(largestLegacyGap, 1e-3F) << "the executed kernel must not be the legacy 100 radius";
+    }
+
+    // The ROI is the matching window of the whole-frame render at the same proxy
+    // scale, and the plate's coverage carries the real 250-pixel radius.
+    const Region region{400, 296, 24, 16};
+    const auto wholeFrame = evaluateCpu(document, windowRequest(document, "out", {0, 0, kDomainWidth, kDomainHeight},
+                                                                kScale, kDomainWidth, kDomainHeight));
+    const auto cropped =
+        evaluateCpu(document, windowRequest(document, "out", region, kScale, kDomainWidth, kDomainHeight));
+    expectWindowMatchesWholeFrame(cropped.image, wholeFrame.image, region, kScale);
+    const PlanStep* plate = stepFor(cropped.plan, "plate");
+    ASSERT_NE(plate, nullptr);
+    EXPECT_TRUE(
+        regionContains(plate->region, Region{region.x - 252, region.y - 252, region.width + 504, region.height + 504}));
+}
+
+TEST(RegionalEvaluationTest, BlurChecksActualSupportAndHaloRepresentationBeforeAllocation) {
+    auto document = makeDocument({{"testpattern", "plate"}, {"blur", "soften"}, {"output", "out"}}, 8, 1);
+    auto& graph = rootGraph(document);
+    const auto soften = graph.nodeByName("soften")->id;
+    connect(graph, "plate", "soften");
+    connect(graph, "soften", "out");
+    const auto request = fullFrameRequest(document, 0, 8, 1);
+    // This support exceeds the contiguous integer-exact float range, but the
+    // particular value is exact. Planning clips its read to the real producer;
+    // it does not allocate or run this deliberately expensive reference kernel.
+    graph.setParam(soften, "size", 33554432.0);
+    const auto plan = planDependencyRegions(document, request, *builtinNodeContributions());
+    const auto plate = std::find_if(plan.images.nodes.begin(), plan.images.nodes.end(),
+                                    [](const auto& entry) { return entry.second.node.name == "plate"; });
+    ASSERT_NE(plate, plan.images.nodes.end());
+    EXPECT_EQ(plan.requests.at(plate->first).region, (Region{0, 0, 8, 1}));
+    // Support and halo failure are separate integer representations. Neither
+    // enormous authored value may reach a weights allocation or wrap a region.
+    for (const double radius : {static_cast<double>(std::numeric_limits<float>::max()), 1073741824.0}) {
+        graph.setParam(soften, "size", radius);
+        auto reduced = request;
+        reduced.samplingScale = 4;
+        EXPECT_THROW(static_cast<void>(planDependencyRegions(document, reduced, *builtinNodeContributions())),
+                     EvaluationException);
+    }
+}
+
+TEST(NativeEffectTest, BlurRefusesWeightsBeyondApprovedReferenceBudgetBeforeAllocation) {
+    auto document = makeDocument({{"testpattern", "plate"}, {"blur", "soften"}, {"output", "out"}}, 1, 1);
+    auto& graph = rootGraph(document);
+    connect(graph, "plate", "soften");
+    connect(graph, "soften", "out");
+    // 2*8388608+1 float weights exceed 64 MiB by one float.
+    graph.setParam(graph.nodeByName("soften")->id, "size", 8388608.0);
+    try {
+        static_cast<void>(evaluateCpu(document, fullFrameRequest(document, 0, 1, 1)));
+        FAIL() << "oversized weights must be refused before allocation and tap loops";
+    } catch (const EvaluationException& error) {
+        EXPECT_NE(std::string(error.what()).find("soften"), std::string::npos);
+        EXPECT_NE(std::string(error.what()).find("size"), std::string::npos);
+    }
 }
 
 TEST(RegionalEvaluationTest, WholeFrameOnlyContributionEscalatesAndStillServesRegions) {

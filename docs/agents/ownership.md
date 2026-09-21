@@ -250,8 +250,8 @@ require owner review; performance claims additionally need the #16 gate.
 `ParameterSpec` in `NodeCatalog.hpp` owns name, type, typed default, optional
 numeric min/max, choice values, and optional presentation metadata (`label`,
 `section`, `step`, namespaced `editor`). #75 adds `softMinimum`/`softMaximum`
-(soft scrubbing/slider travel that is never a legal bound — a typed value is not
-clamped or quantized to it), `displayDecimals` (display rounding only),
+(slider navigation only — typing, scrubbing and keyboard stepping can cross it
+without clamping or quantizing authored values), `displayDecimals` (display rounding only),
 `row` (consecutive same-`row` parameters render side-by-side, Transform's
 `Translate` X/Y), `channels` (`ChannelHint`: `ChannelLink` Additive/
 Multiplicative plus `alphaSeparate`, the linked-RGB editing semantics) and
@@ -268,6 +268,22 @@ in a schema only when the declared range admits every valid canvas dimension.
 Integer, Float, Choice, Vector2, Vector3, Color and String values; serialization
 and shared parameter commands own conversion/validation, not QML. Use those
 definitions rather than maintaining a second parameter-type table.
+
+#103 makes numeric authoring unbounded by default. A retained hard restriction
+must name a semantic, representation or safety constraint; costly work needs
+explicit owner approval rather than a convenience cap. Declare navigation
+travel in the schema, not privately in a registered editor. The shared slider
+includes out-of-travel values and freezes its mapping during a drag; pressing
+the handle preserves the exact value until intentional movement.
+The [restriction inventory](../evidence/assets/issue103-parameter-policy/restriction-inventory.json)
+records the built-in domains, control policy and approved resource exceptions.
+
+Parameter failures remain with their command/controller/evaluation owners.
+Generic and registered inspectors do not print unsolicited error paragraphs
+or reserve space for them. Existing field error borders, tooltips and
+accessibility diagnostics remain; unavailable-editor states remain distinct.
+Explicit Write job progress/results/failures are the owner-approved exception,
+not permission for parameter or discovery error paragraphs.
 
 **Typed values and the generic inspector host are delivered.**
 [#46](https://github.com/rgamevfx/nemo/issues/46) is closed owner-accepted

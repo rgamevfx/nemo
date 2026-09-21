@@ -2,7 +2,7 @@
 // module per issue #83)
 // ---------------------------------------------------------
 // name: roto
-// version: 1
+// version: 2
 // ports:
 //   - in_bg   : image2D input (OPTIONAL background, port 0; a generator node has
 //               none and the binding is an unread dummy, so the kernel guards

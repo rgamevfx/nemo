@@ -281,15 +281,21 @@ The approved numerical policy is:
   Width scales by the geometric mean of the affine axis scales. Disabling a
   shape's feather disables its point widths too, without erasing their values.
   Linear or smoothstep ramps are raised to `1 / falloff` (`falloff > 0`).
-- Motion blur is node-wide only: shutter `[0,1]` frames, default `.5`, centered
-  midpoint samples, at most 64. Samples 1 or shutter 0 uses the current frame.
+- Motion blur is node-wide only: nonnegative shutter in frames, default `.5`,
+  centered midpoint samples, at most 64. #103 removes the shutter upper bound
+  and explicitly retains the 1–64 temporal-work exception. Samples 1 or shutter
+  0 uses the current frame.
   Each sample evaluates animated points, transforms, properties and lifetime,
   completes the hierarchy, then contributes to the average.
 - A generator stores exactly the named output channel (default `A`). A
   connected node preserves other channels and appends a missing target.
   Replace writes the matte; otherwise target output is
-  `matte + (1 - matte) * incoming`. Node opacity and an optional exact named mask
-  limit the matte. An absent/disabled mask is unlimited; a missing channel on a
+  `matte + (1 - matte) * incoming`. Finite node opacity scales the completed
+  matte without hard bounds (#103); element/group opacity remains in `[0,1]`
+  because it participates in coverage combination. Point tension retains its
+  `[0,1]` smooth-curve/control-polygon domain. These two domains are explicitly
+  owner-approved in #103. An optional exact named mask limits the matte.
+  An absent/disabled mask is unlimited; a missing channel on a
   connected mask is zero, before optional inversion.
 - Clip uses format, incoming bbox, their union/intersection, or no restriction.
   For a generator, bbox is the sampled matte extent; inversion includes the

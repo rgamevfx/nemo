@@ -92,7 +92,6 @@ ApplicationWindow {
     property string panelNodeId: ""
     property string parentPath: ""
     property var exposure: ({})
-    property string message: ""
     property bool pickerOpen: false
     property var candidates: []
     property int insertionIndex: -1
@@ -110,7 +109,6 @@ ApplicationWindow {
         panelNetworkId = String(networkId);
         panelNodeId = String(nodeId);
         parentPath = String(path || "");
-        message = "";
         pickerOpen = false;
         search.text = "";
         refresh();
@@ -197,35 +195,32 @@ ApplicationWindow {
         }
     }
 
+    // A refusal is a return value, never a printed line: the rejection reason is
+    // the drag's own acceptance test, and every command failure stays on the
+    // controller that owns it.
     function dropParameter(payload, index) {
-        message = rejection(payload);
-        if (message.length)
+        if (rejection(payload).length)
             return false;
-        if (!controller.promoteParameter(definition, String(payload.nodeId), String(payload.parameterKey), "", index)) {
-            message = controller.error;
-            return false;
-        }
-        return true;
+        return controller.promoteParameter(definition, String(payload.nodeId), String(payload.parameterKey), "", index);
     }
 
     function renameRow(id, name) {
         if (!available)
             return;
-        if (!name.trim().length) {
-            message = "An exposed parameter needs a label.";
-            return;
-        }
-        message = controller.renameExposedParameter(definition, id, name.trim()) ? "" : controller.error;
+        // An empty label is refused by the command owner (it requires a name);
+        // the field returns to the authored label with no line printed here.
+        controller.renameExposedParameter(definition, id, name.trim());
     }
 
     function removeRow(id) {
         if (available)
-            message = controller.removeExposedParameter(definition, id) ? "" : controller.error;
+            controller.removeExposedParameter(definition, id);
     }
 
     function moveRow(id, index) {
-        if (available)
-            message = controller.moveExposedParameter(definition, id, index) ? "" : controller.error;
+        if (!available)
+            return false;
+        return controller.moveExposedParameter(definition, id, index);
     }
 
     function acceptDrop(payload, index) {
@@ -240,8 +235,7 @@ ApplicationWindow {
             return false;
         if (destination === from)
             return true;
-        moveRow(String(payload.exposureId), destination);
-        return message.length === 0;
+        return moveRow(String(payload.exposureId), destination);
     }
 
     onClosing: {
@@ -250,20 +244,12 @@ ApplicationWindow {
         exposure = ({});
         candidates = [];
         pickerOpen = false;
-        message = "";
     }
     Connections {
         target: subnetParameters.controller
         function onGraphChanged() {
             if (subnetParameters.visible)
                 Qt.callLater(subnetParameters.refresh);
-        }
-    }
-    Connections {
-        target: historyController
-        function onChanged() {
-            if (subnetParameters.active && historyController.error.length)
-                subnetParameters.message = historyController.error
         }
     }
 
@@ -437,8 +423,7 @@ ApplicationWindow {
                 }
                 onEntered: function (drag) {
                     payload = subnetParameters.dragPayload(drag);
-                    subnetParameters.message = subnetParameters.rejection(payload);
-                    drag.accepted = subnetParameters.message.length === 0;
+                    drag.accepted = subnetParameters.rejection(payload).length === 0;
                     if (drag.accepted)
                         updatePosition(drag.y);
                 }
@@ -448,8 +433,7 @@ ApplicationWindow {
                 onExited: subnetParameters.insertionIndex = -1
                 onDropped: function (drop) {
                     var incoming = subnetParameters.dragPayload(drop);
-                    subnetParameters.message = subnetParameters.rejection(incoming);
-                    if (!subnetParameters.message.length && subnetParameters.acceptDrop(incoming, subnetParameters.insertionIndex))
+                    if (subnetParameters.rejection(incoming).length === 0 && subnetParameters.acceptDrop(incoming, subnetParameters.insertionIndex))
                         drop.accept(incoming.exposureId ? Qt.MoveAction : Qt.CopyAction);
                     subnetParameters.insertionIndex = -1;
                 }
@@ -514,14 +498,6 @@ ApplicationWindow {
                     color: subnetParameters.theme.muted
                 }
             }
-        }
-        Label {
-            objectName: "subnetParametersMessage"
-            Layout.fillWidth: true
-            visible: text.length > 0
-            text: subnetParameters.message
-            color: subnetParameters.theme.accent
-            wrapMode: Text.WordWrap
         }
         Label {
             Layout.fillWidth: true

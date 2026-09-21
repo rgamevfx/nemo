@@ -1463,11 +1463,11 @@ TEST_F(WorkspaceDragTest, SubnetParameterPopoutExposesEditsAndReordersRows) {
     QCoreApplication::sendEvent(popup, &rejectedLeave);
     EXPECT_EQ(viewerController.subnetExposure(network, subnet).value("rows").toList().size(), 1);
     setPayload(definition);
-    ASSERT_TRUE(enterDrop()) << popup->property("message").toString().toStdString();
+    ASSERT_TRUE(enterDrop()) << viewerController.error().toStdString();
     QDragLeaveEvent leave;
     QCoreApplication::sendEvent(popup, &leave);
     EXPECT_EQ(viewerController.subnetExposure(network, subnet).value("rows").toList().size(), 1);
-    ASSERT_TRUE(enterDrop()) << popup->property("message").toString().toStdString();
+    ASSERT_TRUE(enterDrop()) << viewerController.error().toStdString();
     QDropEvent drop(dropPoint, Qt::CopyAction, &mime, Qt::LeftButton, Qt::NoModifier);
     QCoreApplication::sendEvent(popup, &drop);
     EXPECT_TRUE(drop.isAccepted());

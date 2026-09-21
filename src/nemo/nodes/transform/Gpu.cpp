@@ -160,9 +160,12 @@ void main() {
         coverage = mask.y > 0.5 ? 1.0 - selected : selected;
     }
     // Endpoints are exact: weight 0 keeps the original, weight 1 the fully
-    // processed pixel (avoids HDR 0*inf cancellation in mix()).
+    // processed pixel (avoids HDR 0*inf cancellation in mix()). The comparisons
+    // are equality, never `<= 0`/`>= 1`: a clamp there would saturate an
+    // extrapolating Mix (issue #103) and disagree with the CPU seam, which
+    // blends `source + (processed - source) * weight` for every finite weight.
     float weight = coverage * mask.z;
-    vec4 result = weight <= 0.0 ? orig : (weight >= 1.0 ? processed : mix(orig, processed, weight));
+    vec4 result = weight == 0.0 ? orig : (weight == 1.0 ? processed : mix(orig, processed, weight));
     // Auxiliary channels are preserved where they ARE, not resampled: the shared
     // store resolves the source pixel on the sampling lattice, never the
     // transformed sample this pass computed (issues #90, #98).

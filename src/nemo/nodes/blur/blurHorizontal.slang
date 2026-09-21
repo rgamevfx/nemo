@@ -2,7 +2,7 @@
 // module per issue #83)
 // ---------------------------------------------------------
 // name: blurHorizontal (internal pass 1 of the `blur` node)
-// version: 2
+// version: 3
 // ports:
 //   - in_main : image2D input (main image, required port 0)
 //   - out_color : image2D output (scratch of the separable filter)
@@ -35,7 +35,10 @@
 // radius, sigma = size/3, raster support = ceil(size/samplingScale) and
 // sample i sits at full-res offset i*samplingScale; weights
 // exp(-0.5*(i*samplingScale/sigma)^2) normalized per axis over the executed
-// raster; clamp-to-edge border. size 0 is the exact identity.
+// raster; clamp-to-edge border. size 0 is the exact identity. The radius has no
+// authored maximum (issue #103); the tap count is the checked, representable
+// support the preparation computed, so the kernel never saturates a larger
+// requested size.
 
 #include "../GpuGeometry.slang"
 

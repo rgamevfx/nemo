@@ -1514,14 +1514,11 @@ TEST_F(CropReformatSurface, Issue94WriteInspectorEditsAndDeliversExplicitly) {
     EXPECT_EQ(refused.value(QStringLiteral("state")).toString(), QStringLiteral("failed"));
     EXPECT_EQ(refused.value(QStringLiteral("writtenFrames")).toInt(), 0);
     auto* failure = item(QStringLiteral("writeFailure_") + write);
-    auto* problem = item(QStringLiteral("writeProblem_") + write);
     ASSERT_NE(failure, nullptr);
-    ASSERT_NE(problem, nullptr);
     ASSERT_TRUE(waitFor([&] { return failure->isVisible(); }, 2000));
     EXPECT_TRUE(failure->property("text").toString().contains(firstFile))
         << failure->property("text").toString().toStdString();
     EXPECT_TRUE(delivery_->error().isEmpty()) << "a job's own refusal is not a submission failure";
-    EXPECT_FALSE(problem->isVisible()) << "the panel raises no refusal of its own";
     ASSERT_TRUE(first.open(QIODevice::ReadOnly));
     EXPECT_EQ(first.readAll(), original);
     first.close();

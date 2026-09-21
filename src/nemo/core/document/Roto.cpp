@@ -66,7 +66,33 @@ namespace {
 // The roto parameter schema. One table serves lookup, defaulting, range
 // validation and the shared animation machinery, so a key cannot drift between
 // the model, the persistence codec and the presentation layer.
-
+//
+// Exactly three properties declare a hard range, each because the value feeds
+// an operation whose documented algebra or representation requires it — never
+// because a slider looks better that way (issue #103):
+//
+//   * `opacity` [0,1]. An element's (or group's) opacity multiplies its own
+//     value BEFORE the sibling fold, so it is an operand of the documented
+//     coverage algebra (ADR-0008: Combine `a + b - a*b`, Intersect `a*b`,
+//     Subtract `a*(1-b)`). That algebra is the coverage union/intersection only
+//     for operands inside [0,1]: two coincident shapes at opacity 2 would fold
+//     to `2 + 2 - 4 = 0`, a hole instead of a doubled matte. Leaving the domain
+//     would require a NEW fold convention (clamping the operands, or an
+//     out-of-domain blend), which is an effect design decision rather than a
+//     removed limit. The NODE's own `opacity` parameter is applied after the
+//     fold and therefore declares no range at all.
+//   * `tension` [0,1]. The endpoints are definitional: 0 is the smooth uniform
+//     cubic and 1 the cusp/control polygon (see RotoPoint). Extrapolated tension
+//     is a different curve convention, not a larger value of this one.
+//   * `featherFalloff` (0, ...). The ramp is raised to `1 / falloff`, so the
+//     reciprocal is the requirement: `denorm_min` is this table's spelling of
+//     "strictly positive" (ADR-0008 states `falloff > 0`). Zero has no
+//     reciprocal and a negative falloff would invert the ramp direction, which
+//     is another convention.
+//
+// Everything else here — translation, scale, pivot, rotation, feather, point
+// tangents, lifetime — declares no bound: negative scale mirrors a shape and
+// negative feather points inward, both already meaningful.
 struct RotoParameterRow {
     ParameterSpec spec;
     // False for an element property; true for a property of one of its points.

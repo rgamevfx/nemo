@@ -247,6 +247,10 @@ struct GpuNodeContext {
     // `inputRequests`). A node's describe callback reads its inputs' formats
     // and data bounds from here.
     std::span<const ImageDescription* const> inputDescriptions;
+    // Device storage-buffer capacity, supplied by the executor. Preparation can
+    // reject an oversized table before host allocation; resource ownership and
+    // final admission remain in the executor.
+    std::uint32_t maxStorageBufferBytes;
     // The authored format of the network that owns this node (issue #92): the
     // saved composition canvas, resolved once by the shared plan, never the
     // selected viewer/Read. It is NOT automatically the node's runtime

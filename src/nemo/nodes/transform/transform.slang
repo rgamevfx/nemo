@@ -2,7 +2,7 @@
 // module per issue #83)
 // ---------------------------------------------------------
 // name: transform
-// version: 2
+// version: 3
 // ports:
 //   - in_main : image2D input (main image, required port 0)
 //   - in_mask : image2D input (optional mask, port 1; bound to the main
@@ -11,7 +11,8 @@
 //     RGBA32F at the logical raster for four stored channels, otherwise
 //     R32_SFLOAT scalar planes at W*(H*C); straight alpha, scene-linear)
 // parameters:
-//   - translateX/translateY (pixels), scale, rotate (degrees, positive
+//   - translateX/translateY (pixels), scale (NONZERO; a negative scale mirrors
+//     the same map), rotate (degrees, positive
 //     clockwise in the stored raster), filter [Cubic, Linear, Nearest], plus
 //     the common maskChannel/invertMask/mix controls.
 // bindings (native binding contract v7, see GpuGeometry.slang):
@@ -209,9 +210,13 @@ void main(uint3 tid : SV_DispatchThreadID)
         coverage = mask.y > 0.5 ? 1.0 - selected : selected;
     }
     // Endpoints are exact: weight 0 keeps the original, weight 1 the fully
-    // processed pixel (avoids HDR 0*inf cancellation in lerp()).
+    // processed pixel (avoids HDR 0*inf cancellation in lerp()). The
+    // comparisons are equality, never `<= 0`/`>= 1`: a clamp there would
+    // saturate an extrapolating Mix (issue #103) and disagree with the CPU
+    // seam, which blends `source + (processed - source) * weight` for every
+    // finite weight.
     float weight = coverage * mask.z;
-    float4 result = weight <= 0.0 ? orig : (weight >= 1.0 ? processed : lerp(orig, processed, weight));
+    float4 result = weight == 0.0 ? orig : (weight == 1.0 ? processed : lerp(orig, processed, weight));
     // Auxiliary channels are preserved where they ARE, not resampled: the shared
     // store resolves the source pixel on the sampling lattice, never the
     // transformed sample this pass computed (issues #90, #98).

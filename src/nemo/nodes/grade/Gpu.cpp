@@ -4,7 +4,9 @@
 // Grade owns its nine-word payload (mask + seven per-channel tuples + flags)
 // at set 0 binding 1 and its own GLSL reference source. The signed-power
 // forward/reverse math is unchanged from issue #34; only the binding layout
-// moved out of the former shared uniform structure.
+// moved out of the former shared uniform structure. Exactly equal Blackpoint/
+// Whitepoint now map a channel to their shared endpoint (issue #103), which the
+// payload's per-channel endpoints already carry: no layout change.
 
 #include <algorithm>
 #include <array>
@@ -65,18 +67,29 @@ float signedPow(float x, float p) {
 // Reverse:  x = (signedPow(y, gamma) - b) / a
 // a = (gain - lift) * multiply / (whitepoint - blackpoint)
 // b = lift + offset - blackpoint * a
+// Exact equal endpoints (issue #103) have no ramp and no inverse: the channel
+// maps to the shared endpoint, which forward continues to process with the
+// remaining controls and reverse produces directly, before the clamps.
 float gradeChannel(float x, int c) {
     const int channels = int(gradeFlags.x);
     if ((channels & (1 << c)) == 0) { return x; }  // disabled: exact pass-through
     const float blackpoint = gradeBlackpoint[c];
     const float whitepoint = gradeWhitepoint[c];
-    const float a = ((gradeGain[c] - gradeLift[c]) * gradeMultiply[c]) / (whitepoint - blackpoint);
-    const float b = gradeLift[c] + gradeOffset[c] - blackpoint * a;
     float y;
-    if (gradeFlags.y > 0.5) {
-        y = (signedPow(x, gradeGamma[c]) - b) / a;  // reverse requires nonzero a (validated)
+    if (blackpoint == whitepoint) {
+        y = gradeFlags.y > 0.5
+                ? blackpoint
+                : signedPow((gradeGain[c] - gradeLift[c]) * gradeMultiply[c] * blackpoint + gradeLift[c] +
+                                gradeOffset[c],
+                            1.0 / gradeGamma[c]);
     } else {
-        y = signedPow(a * x + b, 1.0 / gradeGamma[c]);
+        const float a = ((gradeGain[c] - gradeLift[c]) * gradeMultiply[c]) / (whitepoint - blackpoint);
+        const float b = gradeLift[c] + gradeOffset[c] - blackpoint * a;
+        if (gradeFlags.y > 0.5) {
+            y = (signedPow(x, gradeGamma[c]) - b) / a;  // reverse requires nonzero a (validated)
+        } else {
+            y = signedPow(a * x + b, 1.0 / gradeGamma[c]);
+        }
     }
     // Clamps apply after the operation, before mask/mix (Foundry default black clamp).
     if (gradeFlags.z > 0.5 && y < 0.0) { y = 0.0; }
@@ -125,10 +138,13 @@ void main() {
                        : 0.0;
         coverage = mask.y > 0.5 ? 1.0 - selected : selected;
     }
-    // Endpoints are exact: weight 0 keeps the original, weight 1 the fully
-    // processed pixel, so no HDR 0*inf cancellation occurs in mix().
+    // Only the exact endpoints are special-cased: weight 0 keeps the original
+    // and weight 1 the fully processed pixel, so no HDR 0*inf cancellation
+    // occurs in mix(). Every other finite weight — including the extrapolation
+    // an authored Mix outside [0, 1] produces — is the same lerp the shared CPU
+    // blend computes (EffectCpu.hpp blendEffectOutput).
     float weight = coverage * mask.z;
-    vec4 result = weight <= 0.0 ? orig : (weight >= 1.0 ? processed : mix(orig, processed, weight));
+    vec4 result = weight == 0.0 ? orig : (weight == 1.0 ? processed : mix(orig, processed, weight));
     // Every stored channel this pass's arithmetic did not write keeps its named channel
     // from the main input at the same coordinate (issue #90): a Grade of the
     // RGB roles never drops an auxiliary channel.

@@ -893,7 +893,8 @@ static std::optional<GpuEvaluation> executeGpu(const Document& document, Evaluat
             preparation = implementation.prepare(
                 {catalog, *effectiveNode, nodeRequest, node.params, maskPresent, pixelAspect, inputRequests,
                  description, planNode.source ? &*planNode.source : nullptr, inputDescriptions,
-                 &document.network(expandedNode.id.network).format(), &document, expandedNode.id.network});
+                 device.properties().limits.maxStorageBufferRange, &document.network(expandedNode.id.network).format(),
+                 &document, expandedNode.id.network});
         } catch (const std::exception& error) {
             failEffect(*effectiveNode, program, std::string("local preparation failed: ") + error.what());
         }

@@ -2,7 +2,7 @@
 // module per issue #83)
 // ---------------------------------------------------------
 // name: grade
-// version: 2
+// version: 3
 // ports:
 //   - in_main : image2D input (main image, required port 0)
 //   - in_mask : image2D input (optional mask, port 1; bound to the main
@@ -41,6 +41,12 @@
 //   y = signedPow(a*x + b, 1/gamma)
 // Reverse:
 //   x = (signedPow(y, gamma) - b) / a   (requires nonzero a)
+// Equal endpoints (issue #103): a channel whose Blackpoint and Whitepoint are
+// EXACTLY equal has no ramp and, in reverse, no inverse. The range-mapped value
+// is then their shared endpoint: forward keeps running the remaining controls on
+// it, reverse produces the endpoint itself (an approved fallback convention, not
+// recovered source). There is no epsilon band: near-equal endpoints keep the
+// normal mapping. The clamps below apply to either result.
 // signedPow(0, p) = 0 and sign(x)*pow(abs(x), p): the explicit
 // negative/HDR extension, not a claim of bitwise Nuke parity. Clamps apply
 // after the operation, before mask/mix. Invalid coefficients are rejected by
@@ -106,11 +112,22 @@ float gradeChannel(float x, int c)
     if ((int(gradeFlags.x) & (1 << c)) == 0) { return x; }  // disabled: exact pass-through
     float blackpoint = gradeBlackpoint[c];
     float whitepoint = gradeWhitepoint[c];
-    float a = ((gradeGain[c] - gradeLift[c]) * gradeMultiply[c]) / (whitepoint - blackpoint);
-    float b = gradeLift[c] + gradeOffset[c] - blackpoint * a;
     float y;
-    if (gradeFlags.y > 0.5) { y = (signedPow(x, gradeGamma[c]) - b) / a; }
-    else { y = signedPow(a * x + b, 1.0 / gradeGamma[c]); }
+    if (blackpoint == whitepoint) {
+        // Issue #103: exact equal endpoints map the channel to their shared
+        // value. Forward continues the remaining controls on it; reverse has no
+        // inverse to recover and produces the endpoint itself.
+        y = gradeFlags.y > 0.5
+                ? blackpoint
+                : signedPow((gradeGain[c] - gradeLift[c]) * gradeMultiply[c] * blackpoint + gradeLift[c] +
+                                gradeOffset[c],
+                            1.0 / gradeGamma[c]);
+    } else {
+        float a = ((gradeGain[c] - gradeLift[c]) * gradeMultiply[c]) / (whitepoint - blackpoint);
+        float b = gradeLift[c] + gradeOffset[c] - blackpoint * a;
+        if (gradeFlags.y > 0.5) { y = (signedPow(x, gradeGamma[c]) - b) / a; }
+        else { y = signedPow(a * x + b, 1.0 / gradeGamma[c]); }
+    }
     // Clamps apply after the operation, before mask/mix (Foundry default black clamp).
     if (gradeFlags.z > 0.5 && y < 0.0) { y = 0.0; }
     if (gradeFlags.w > 0.5 && y > 1.0) { y = 1.0; }
@@ -168,10 +185,13 @@ void main(uint3 tid : SV_DispatchThreadID)
                        : 0.0;
         coverage = mask.y > 0.5 ? 1.0 - selected : selected;
     }
-    // Endpoints are exact: weight 0 keeps the original, weight 1 the fully
-    // processed pixel, so no HDR 0*inf cancellation occurs in lerp().
+    // Only the exact endpoints are special-cased: weight 0 keeps the original
+    // and weight 1 the fully processed pixel, so no HDR 0*inf cancellation
+    // occurs in lerp(). Every other finite weight — including the extrapolation
+    // an authored Mix outside [0, 1] produces — is the same lerp the shared CPU
+    // blend computes (EffectCpu.hpp blendEffectOutput).
     float weight = coverage * mask.z;
-    float4 result = weight <= 0.0 ? orig : (weight >= 1.0 ? processed : lerp(orig, processed, weight));
+    float4 result = weight == 0.0 ? orig : (weight == 1.0 ? processed : lerp(orig, processed, weight));
     // Every stored channel this pass's arithmetic did not write keeps its named channel
     // from the main input at the same coordinate (issue #90).
     gpuStorePixel(out_color, int2(p), planeHeight, channels.x, channels.y, channels.z, rgba, result, in_main,

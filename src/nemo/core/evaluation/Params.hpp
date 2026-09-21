@@ -139,10 +139,12 @@ struct EffectMaskParameters {
         failNode(node, "parameter 'maskChannel' must be one of none, R, G, B, A, got '" + channel + "'");
     }
     mask.invert = effectiveFlag(catalog, node, effectiveParams, "invertMask");
+    // Mix is a plain blend weight: the shared blend is
+    // `source + (effect - source) * mix`, which is defined for every finite
+    // factor, so an extrapolating value is a legal authored value (issue #103).
+    // `effectiveNumber` keeps the finite, float-representable requirement; the
+    // old [0,1] admissibility rule was a slider range, not a semantic bound.
     mask.mix = effectiveNumber(catalog, node, effectiveParams, "mix");
-    if (!(mask.mix >= 0.0F) || !(mask.mix <= 1.0F)) {
-        failNode(node, "parameter 'mix' must be within [0, 1]");
-    }
     return mask;
 }
 

@@ -1089,6 +1089,8 @@ TEST_F(AnimationSurface, NumericEditorTypedCommitAndRejectionPreserveState) {
     EXPECT_EQ(committed.front().value, nemo::ParameterValue{12.5});
 
     const auto revision = session.revision();
+    const auto fieldHeight = field->height();
+    const auto cardHeight = item("inspector_" + node)->height();
     enter("param_" + node + "_translateX", "not-a-number");
     QTest::keyClick(window, Qt::Key_Return);
     QTest::qWait(30);
@@ -1096,10 +1098,16 @@ TEST_F(AnimationSurface, NumericEditorTypedCommitAndRejectionPreserveState) {
     const auto kept = session.queryValues(scope.toULongLong(), node.toULongLong(), "translateX");
     ASSERT_FALSE(kept.empty());
     EXPECT_EQ(kept.front().value, nemo::ParameterValue{12.5});
-    auto* error = item("error_" + node + "_translateX");
-    ASSERT_NE(error, nullptr);
-    EXPECT_TRUE(error->isVisible());
-    EXPECT_FALSE(error->property("text").toString().isEmpty());
+    field = item("param_" + node + "_translateX");
+    ASSERT_NE(field, nullptr);
+    EXPECT_FALSE(field->property("errorText").toString().isEmpty());
+    EXPECT_EQ(field->height(), fieldHeight);
+    EXPECT_EQ(item("inspector_" + node)->height(), cardHeight);
+    enter("param_" + node + "_translateX", "still-invalid");
+    QTest::keyClick(window, Qt::Key_Return);
+    QTest::qWait(30);
+    EXPECT_EQ(session.revision(), revision);
+    EXPECT_EQ(item("inspector_" + node)->height(), cardHeight);
     captureParameters(window, "numeric-error");
 }
 
@@ -1170,6 +1178,126 @@ TEST_F(AnimationSurface, NumericEditorKeyboardStepModifiedMarkerAndReset) {
     EXPECT_EQ(controller.nodeParameterKeyStatus(scope, node, "translateY"), QStringLiteral("key"));
 }
 
+TEST_F(AnimationSurface, NumericAuthoringCrossesSoftTravelWithoutLosingHistoryOrKeys) {
+    const auto scope = controller.rootNetworkId();
+    const auto node = controller.createGraphNode(scope, "transform", "UnboundedMotion", 20, 440, {}, {});
+    ASSERT_FALSE(node.isEmpty());
+    ASSERT_TRUE(router.requestInspector(panelGroupOf(window), scope, node));
+    QTest::qWait(40);
+    const QString name = "param_" + node + "_translateX";
+    const auto value = [&]() {
+        return std::get<double>(
+            session.queryValues(scope.toULongLong(), node.toULongLong(), "translateX").front().value);
+    };
+    enter(name, "200.125");
+    QTest::keyClick(window, Qt::Key_Return);
+    QTest::qWait(30);
+    ASSERT_DOUBLE_EQ(value(), 200.125);
+    auto* field = item(name);
+    ASSERT_NE(field, nullptr);
+    field->forceActiveFocus();
+    QTest::keyClick(window, Qt::Key_Up);
+    QTest::qWait(30);
+    EXPECT_DOUBLE_EQ(value(), 201.125);
+    ASSERT_TRUE(session.undo({session.revision(), {}}).committed);
+    EXPECT_DOUBLE_EQ(value(), 200.125);
+    ASSERT_TRUE(session.redo({session.revision(), {}}).committed);
+    EXPECT_DOUBLE_EQ(value(), 201.125);
+
+    enter(name, "-200.125");
+    QTest::keyClick(window, Qt::Key_Return);
+    QTest::qWait(30);
+    field = item(name);
+    ASSERT_NE(field, nullptr);
+    field->forceActiveFocus();
+    QTest::keyClick(window, Qt::Key_Down, Qt::ShiftModifier);
+    QTest::qWait(30);
+    EXPECT_DOUBLE_EQ(value(), -200.225);
+    field = item(name);
+    ASSERT_NE(field, nullptr);
+    const auto center = field->mapToScene(QPointF(field->width() / 2, field->height() / 2)).toPoint();
+    const auto beforeDrag = session.revision();
+    drag(center, center - QPoint(30, 0));
+    EXPECT_LT(value(), -200.225);
+    EXPECT_EQ(session.revision(), beforeDrag + 1);
+    const auto scrubbed = value();
+    ASSERT_TRUE(controller.keyNodeParameter(scope, node, "translateX"));
+    const auto* channel =
+        session.document().animationChannel(ParameterAddress{scope.toULongLong(), node.toULongLong(), "translateX"});
+    ASSERT_NE(channel, nullptr);
+    EXPECT_EQ(channel->keys.front().value, ParameterValue{scrubbed});
+    QTemporaryDir directory;
+    ASSERT_TRUE(directory.isValid());
+    const auto filename = (directory.path() + "/soft-range.nemo").toStdString();
+    ASSERT_TRUE(ProjectFile::writeAtomic(session.prepareSave(filename)).ok);
+    const auto reopened = ProjectFile::read(filename);
+    ASSERT_TRUE(reopened.ok);
+    EXPECT_EQ(reopened.document.animationChannel(channel->address)->keys.front().value, ParameterValue{scrubbed});
+    captureParameters(window, "unbounded-numeric");
+}
+
+TEST_F(AnimationSurface, SliderPreservesOutOfTravelValueUntilAnIntentionalAdjustment) {
+    const auto scope = controller.rootNetworkId();
+    const auto node = controller.createGraphNode(scope, "transform", "WideScale", 20, 440, {}, {});
+    ASSERT_FALSE(node.isEmpty());
+    ASSERT_TRUE(router.requestInspector(panelGroupOf(window), scope, node));
+    QTest::qWait(40);
+    enter("param_" + node + "_scale", "4.125");
+    QTest::keyClick(window, Qt::Key_Return);
+    QTest::qWait(30);
+    auto* slider = item("slider_" + node + "_scale");
+    ASSERT_NE(slider, nullptr);
+    ASSERT_TRUE(slider->isVisible());
+    const auto value = [&]() {
+        return std::get<double>(session.queryValues(scope.toULongLong(), node.toULongLong(), "scale").front().value);
+    };
+    const auto revision = session.revision();
+    // The out-of-travel handle is at the right end. Clicking it must not snap
+    // the exact typed value to either the soft maximum or a navigation tick.
+    const auto handle = slider->mapToScene(QPointF(slider->width() - 12, slider->height() / 2)).toPoint();
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, handle);
+    QTest::qWait(30);
+    EXPECT_DOUBLE_EQ(value(), 4.125);
+    EXPECT_EQ(session.revision(), revision);
+    drag(handle, handle - QPoint(8, 0));
+    EXPECT_LT(value(), 4.125);
+    EXPECT_GT(value(), 3.0) << "dragging from an out-of-travel value must not clip to the soft maximum";
+    ASSERT_TRUE(session.undo({session.revision(), {}}).committed);
+    EXPECT_DOUBLE_EQ(value(), 4.125);
+    captureParameters(window, "out-of-travel-slider");
+}
+
+TEST_F(AnimationSurface, BlurBeyondFormerCeilingKeepsExactAuthoredAndKeyedValues) {
+    ASSERT_TRUE(
+        editors.registerEditor(QStringLiteral("nemo.numeric.graduated"),
+                               QUrl::fromLocalFile(QStringLiteral(NEMO_UI_QML_DIR "/GraduatedNumberEditor.qml"))));
+    const auto scope = controller.rootNetworkId();
+    const auto node = controller.createGraphNode(scope, "blur", "LargeBlur", 20, 440, {}, {});
+    ASSERT_TRUE(router.requestInspector(panelGroupOf(window), scope, node));
+    QTest::qWait(40);
+    enter("param_" + node + "_size", "101");
+    QTest::keyClick(window, Qt::Key_Return);
+    QTest::qWait(30);
+    EXPECT_EQ(session.queryValues(scope.toULongLong(), node.toULongLong(), "size").front().value,
+              ParameterValue{101.0});
+    enter("param_" + node + "_size", "250.125");
+    QTest::keyClick(window, Qt::Key_Return);
+    QTest::qWait(30);
+    ASSERT_TRUE(controller.keyNodeParameter(scope, node, "size"));
+    const ParameterAddress address{scope.toULongLong(), node.toULongLong(), "size"};
+    const auto* channel = session.document().animationChannel(address);
+    ASSERT_NE(channel, nullptr);
+    EXPECT_EQ(channel->keys.front().value, ParameterValue{250.125});
+    const auto filename = directory.filePath("large-blur.nemo").toStdString();
+    ASSERT_TRUE(ProjectFile::writeAtomic(session.prepareSave(filename)).ok);
+    const auto reopened = ProjectFile::read(filename);
+    ASSERT_TRUE(reopened.ok);
+    const auto* restored = reopened.document.animationChannel(address);
+    ASSERT_NE(restored, nullptr);
+    EXPECT_EQ(restored->keys.front().value, ParameterValue{250.125});
+    captureParameters(window, "large-blur");
+}
+
 // The grouped Transform Translate row keeps two independent identities: one is
 // keyed and edited without touching the other.
 TEST_F(AnimationSurface, TransformTranslatePairKeepsIndependentIdentities) {
@@ -1236,6 +1364,19 @@ TEST_F(AnimationSurface, GradeLinkedRgbEditingPreservesComponentsAndAlpha) {
     const auto nodeId = node.toULongLong();
     auto* linked = item("channels_linked_" + node + "_gain");
     ASSERT_NE(linked, nullptr);
+    const auto initialGain = session.queryValues(network, nodeId, "gain").front().value;
+    const auto initialRevision = session.revision();
+    const auto initialHeight = item("inspector_" + node)->height();
+    for (int attempt = 0; attempt < 2; ++attempt) {
+        enter("channels_linked_" + node + "_gain", "invalid");
+        QTest::keyClick(window, Qt::Key_Return);
+        QTest::qWait(30);
+        EXPECT_EQ(session.revision(), initialRevision);
+        EXPECT_EQ(session.queryValues(network, nodeId, "gain").front().value, initialGain);
+        EXPECT_EQ(item("inspector_" + node)->height(), initialHeight);
+        EXPECT_FALSE(item("channels_linked_" + node + "_gain")->property("errorText").toString().isEmpty());
+    }
+    captureParameters(window, "grade-rejection-no-paragraph");
 
     // Equal RGB takes one typed linked value and leaves alpha alone.
     enter("channels_linked_" + node + "_gain", "2");

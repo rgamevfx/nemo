@@ -401,7 +401,21 @@ TEST_F(RotoSurface, InspectorReflectsPublishedValuesUndoAndKeyedFrames) {
         {{address, nemo::Keyframe{.time = 0, .value = 0.8}}, {address, nemo::Keyframe{.time = 10, .value = 0.2}}}));
     controller->setFrame(5);
     ASSERT_TRUE(waitFor([&] { return std::abs(field->property("value").toDouble() - 0.5) < 0.0001; }));
-    submit(nemo::setParamCommand(network.toULongLong(), roto.toULongLong(), "opacity", 0.9));
+    submit(nemo::setParamCommand(network.toULongLong(), roto.toULongLong(), "opacity", 2.5));
+    auto* master = item("param_" + roto + "_opacity");
+    ASSERT_NE(master, nullptr);
+    EXPECT_DOUBLE_EQ(master->property("value").toDouble(), 2.5);
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier,
+                      master->mapToScene(QPointF(master->width() / 2, master->height() / 2)).toPoint());
+    QTest::keyClick(window, Qt::Key_Escape);
+    QTest::keyClick(window, Qt::Key_Up);
+    QTest::qWait(30);
+    EXPECT_NEAR(
+        std::get<double>(session->queryValues(network.toULongLong(), roto.toULongLong(), "opacity").front().value),
+        2.51, 1e-9);
+    ASSERT_TRUE(history->undo());
+    QTest::qWait(30);
+    EXPECT_DOUBLE_EQ(master->property("value").toDouble(), 2.5);
     EXPECT_NEAR(field->property("value").toDouble(), 0.5, 0.0001);
     auto* otherGroup = facade->createRotoControllerFor(network, roto, "B", window);
     ASSERT_NE(otherGroup, nullptr);

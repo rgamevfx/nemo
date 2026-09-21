@@ -32,9 +32,6 @@ ColumnLayout {
     readonly property bool editable: !!controller && !!panel
     property var paramRows: ({})
     property var presets: []
-    property string schemaProblem: ""
-    property string formatProblem: ""
-    readonly property string gestureProblem: panel && paramRows[String(panel.gestureErrorKey)] ? String(panel.gestureError) : ""
     readonly property string formatType: valueOf("type", "format")
     readonly property bool customSource: valueOf("formatSource", "composition") === "custom"
     readonly property var compositionFormat: {
@@ -63,7 +60,6 @@ ColumnLayout {
                 for (var j = 0; j < parameters.length; ++j)
                     rows[String(parameters[j].key)] = parameters[j];
             }
-            schemaProblem = inspector.available === false ? String(inspector.reason || "") : "";
             presets = controller.namedFormats();
         }
         paramRows = rows;
@@ -93,15 +89,11 @@ ColumnLayout {
         if (token.length === 0)
             return false;
         if (!panel.updateEditMany(token, values)) {
-            formatProblem = controller ? String(controller.error) : "";
             panel.cancelEdit(token);
             return false;
         }
-        if (!panel.commitEdit(token)) {
-            formatProblem = controller ? String(controller.error) : "";
+        if (!panel.commitEdit(token))
             return false;
-        }
-        formatProblem = "";
         refresh();
         return true;
     }
@@ -274,8 +266,6 @@ ColumnLayout {
             integer: numberCell.integer
             hasMinimum: false
             hasMaximum: false
-            hasSoftMinimum: false
-            hasSoftMaximum: false
             fieldWidth: 62
             step: numberCell.integer ? 1 : 0.01
             dragThreshold: formatEditor.dragThreshold
@@ -408,16 +398,7 @@ ColumnLayout {
         Flag { editKey: "blackOutside"; text: "black outside" }
         Flag { editKey: "preserveBoundingBox"; text: "preserve bounding box" }
     }
-    Text {
-        visible: text.length > 0
-        Layout.fillWidth: true
-        text: formatEditor.formatProblem || formatEditor.gestureProblem || formatEditor.schemaProblem
-        color: formatEditor.theme.errorText
-        font.pixelSize: formatEditor.theme.fontSize
-        wrapMode: Text.WordWrap
-    }
 
-    property string presetProblem: ""
     property string presetDraftName: ""
     property real presetDraftWidth: 1920
     property real presetDraftHeight: 1080
@@ -430,7 +411,6 @@ ColumnLayout {
         return null;
     }
     function openFormatEditor() {
-        presetProblem = "";
         var match = matchingPreset();
         presetDraftName = match >= 0 ? String(presets[match].name) : "";
         presetDraftWidth = displayedWidth;
@@ -442,29 +422,17 @@ ColumnLayout {
         if (gestureFormat({ formatSource: "custom", width: Math.round(presetDraftWidth),
                             height: Math.round(presetDraftHeight), pixelAspect: presetDraftPixelAspect }))
             formatPopup.close();
-        else
-            presetProblem = formatProblem;
     }
     function savePreset() {
         var name = presetDraftName.trim();
-        if (!name.length) {
-            presetProblem = "Enter a name to save a format";
+        if (!name.length)
             return;
-        }
-        if (!controller.setNamedFormat(name, Math.round(presetDraftWidth), Math.round(presetDraftHeight), presetDraftPixelAspect))
-            presetProblem = String(controller.error);
-        else {
-            presetProblem = "";
+        if (controller.setNamedFormat(name, Math.round(presetDraftWidth), Math.round(presetDraftHeight), presetDraftPixelAspect))
             refresh();
-        }
     }
     function deletePreset() {
-        if (!controller.removeNamedFormat(presetDraftName.trim()))
-            presetProblem = String(controller.error);
-        else {
-            presetProblem = "";
+        if (controller.removeNamedFormat(presetDraftName.trim()))
             refresh();
-        }
     }
     Popup {
         id: formatPopup
@@ -504,8 +472,6 @@ ColumnLayout {
                             label: draftCell.modelData.title
                             hasMinimum: false
                             hasMaximum: false
-                            hasSoftMinimum: false
-                            hasSoftMaximum: false
                             fieldWidth: 64
                             Layout.fillWidth: true
                             onTextCommitted: function(text) { formatEditor[draftCell.modelData.draft] = Number(text); }
@@ -535,7 +501,6 @@ ColumnLayout {
                 ActionButton { objectName: "reformatPresetDelete_" + formatEditor.nodeId; text: "Delete"; enabled: !!formatEditor.presetFor(formatEditor.presetDraftName.trim()); onClicked: formatEditor.deletePreset() }
                 ActionButton { objectName: "reformatPresetClose_" + formatEditor.nodeId; text: "Close"; onClicked: formatPopup.close() }
             }
-            Text { visible: text.length > 0; text: formatEditor.presetProblem; Layout.fillWidth: true; wrapMode: Text.WordWrap; color: formatEditor.theme.errorText; font.pixelSize: formatEditor.theme.fontSize }
         }
     }
 }

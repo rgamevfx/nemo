@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
+#include <limits>
 #include <string_view>
 #include <utility>
 #include <vector>
@@ -36,11 +37,6 @@ namespace {
 constexpr std::array<std::string_view, 3> kFileTypes{"exr", "mov", "mp4"};
 constexpr std::array<std::string_view, 3> kProresProfiles{"422", "4444", "4444xq"};
 constexpr std::array<std::string_view, 4> kColorModes{"raw", "project", "colorspace", "display"};
-
-// A ceiling on the frame rate, so an implausible authored value (a typo, a
-// unit mistake) is refused by validation instead of by an overflowing time
-// base inside the encoder.
-constexpr double kMaxFrameRate = 1000.0;
 
 [[nodiscard]] bool isOneOf(const auto& choices, const std::string& value) {
     return std::find(choices.begin(), choices.end(), std::string_view{value}) != choices.end();
@@ -82,11 +78,17 @@ std::string validateDeliveryOutput(const DeliveryOutputOptions& options) {
         return "file type '" + options.fileType + "' is not supported (supported: " + listText(kFileTypes) + ")";
     }
     if (isMovieFileType(options.fileType)) {
-        // The time base is derived from this value exactly, so it has to be a
-        // number a frame rate can be.
-        if (!std::isfinite(options.frameRate) || options.frameRate <= 0.0 || options.frameRate > kMaxFrameRate) {
+        // A movie's frame rate is exact: the writer converts it into the
+        // container's rational time base, and a value that cannot be one is
+        // refused there, at the conversion (`DeliveryMovieWriter`). The
+        // preflight therefore requires only what the authored number must be on
+        // its own terms — finite and above zero. It deliberately does NOT cap
+        // the rate: the removed 1000 fps ceiling was a convenience limit with no
+        // representation behind it (issue #103), and the value is re-checked
+        // where it is actually converted rather than trusted from here.
+        if (!std::isfinite(options.frameRate) || options.frameRate <= 0.0) {
             return "frame rate " + numberText(options.frameRate) +
-                   " fps is not usable (supported: above 0 and at most " + numberText(kMaxFrameRate) + " fps)";
+                   " fps is not usable (a movie frame rate must be a finite number above 0)";
         }
     }
     if (options.fileType == "mov" && !isOneOf(kProresProfiles, options.profile)) {
@@ -801,11 +803,14 @@ DeliveryMovieWriter::DeliveryMovieWriter(const std::string& temporaryPath, const
                                                     std::to_string(impl_->width) + "x" + std::to_string(impl_->height) +
                                                     ")");
     }
-    // Convert the authored rate to FFmpeg's rational time base.
-    impl_->frameRate = av_d2q(options.frameRate, 90000);
+    // Use the rational representation's full range; a navigation or nominal
+    // clock rate must not become a second bound on the authored frame rate.
+    impl_->frameRate = av_d2q(options.frameRate, std::numeric_limits<int>::max());
     if (impl_->frameRate.num <= 0 || impl_->frameRate.den <= 0) {
-        throw DeliveryMovieError(temporaryPath, "frame rate " + numberText(options.frameRate) +
-                                                    " fps has no usable rational time base");
+        throw DeliveryMovieError(temporaryPath,
+                                 "frame rate " + numberText(options.frameRate) +
+                                     " fps has no representable rational time base (a container stores the rate as a "
+                                     "32-bit numerator and denominator)");
     }
     impl_->start();
 }

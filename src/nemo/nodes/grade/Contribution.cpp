@@ -25,11 +25,15 @@ NodeDescriptor gradeDescriptor() {
     return NodeDescriptor{.type = "grade",
                           .displayName = "Grade",
                           .group = "Color",
+                          // 3: an enabled channel with exactly equal endpoints is
+                          // the shared-endpoint convention instead of a rejected
+                          // edit (issue #103); forward continues the remaining
+                          // controls, reverse uses the endpoint (see Parameters.hpp).
                           // 2: the adapter consumes the resolved image description
                           // for its output raster, so a Data or display-referred
                           // input stays that meaning, and an image with an empty
                           // data window stays transparent black (issue #88).
-                          .implementationVersion = 2,
+                          .implementationVersion = 3,
                           .inputs = effectImageInputs(),
                           .outputs = {{PortKind::Image, "out"}},
                           .parameters = withMaskParameters({
@@ -149,21 +153,38 @@ struct GradeCoefficients {
     std::array<float, kImageChannels> slope{};
     std::array<float, kImageChannels> intercept{};
     std::array<float, kImageChannels> exponent{};
+    // Issue #103: a channel whose endpoints coincide exactly has no ramp, and
+    // in reverse no inverse. `constant` marks it; `constantForward` is what the
+    // forward operation produces from the approved shared-endpoint convention
+    // (the remaining controls applied to that endpoint).
+    std::array<bool, kImageChannels> constant{};
+    std::array<float, kImageChannels> constantForward{};
     std::array<bool, kImageChannels> enabled{};
 };
 
 // Forward: y = signedPow(a*x + b, 1/gamma) with a = (gain-lift)*multiply/
 // (whitepoint-blackpoint) and b = lift + offset - blackpoint*a.
 // Reverse:  x = (signedPow(y, gamma) - b) / a.
-// Disabled channels are exact pass-through. The shared metadata seam
-// (effectiveGrade) owns validation, including singular and unrepresentable
-// enabled-channel settings, so this derives only the coefficients execution
-// consumes.
+// Equal endpoints (issue #103): the range-mapped value is the shared endpoint,
+// which the forward operation then treats like any other ramp value; reverse has
+// no source to recover and produces the shared endpoint itself, before the
+// clamps below. Disabled channels are exact pass-through. The shared metadata
+// seam (effectiveGrade) owns validation, including singular, unrepresentable and
+// equal-endpoint enabled-channel settings, so this derives only the
+// coefficients execution consumes.
 [[nodiscard]] GradeCoefficients resolveGradeCoefficients(const GradeParameters& params) {
     GradeCoefficients coefficients;
     for (std::size_t channel = 0; channel < kImageChannels; ++channel) {
         coefficients.enabled[channel] = (params.channels & kChannelBits[channel]) != 0;
         if (!coefficients.enabled[channel]) {
+            continue;
+        }
+        if (params.blackpoint[channel] == params.whitepoint[channel]) {
+            coefficients.constant[channel] = true;
+            coefficients.constantForward[channel] =
+                (params.gain[channel] - params.lift[channel]) * params.multiply[channel] * params.blackpoint[channel] +
+                params.lift[channel] + params.offset[channel];
+            coefficients.exponent[channel] = 1.0F / params.gamma[channel];
             continue;
         }
         const float slope = (params.gain[channel] - params.lift[channel]) * params.multiply[channel] /
@@ -235,7 +256,14 @@ struct GradeCoefficients {
                     continue;
                 }
                 float result;
-                if (params.reverse) {
+                if (coefficients.constant[channel]) {
+                    // Issue #103: exact equal endpoints. Forward runs the
+                    // remaining controls on the shared endpoint; reverse uses
+                    // the shared endpoint itself. Both then clamp normally.
+                    result = params.reverse
+                                 ? params.blackpoint[channel]
+                                 : signedPow(coefficients.constantForward[channel], coefficients.exponent[channel]);
+                } else if (params.reverse) {
                     result = (signedPow(value, coefficients.exponent[channel]) - coefficients.intercept[channel]) /
                              coefficients.slope[channel];
                 } else {

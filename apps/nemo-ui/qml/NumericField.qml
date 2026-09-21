@@ -4,8 +4,8 @@ import QtQuick.Controls
 // One numeric editor for every built-in node (stories 1-14). It owns only the
 // gesture and the text buffer; the host owns the one parameter gesture
 // (begin/update/commit/cancel) and the catalog remains the only validation
-// authority. Typed values are never clamped to the soft slider travel or
-// rounded to the display precision: the soft range is interaction only.
+// authority. Typing, scrubbing and stepping use legal-value bounds only;
+// slider navigation never limits authoring or rounds to display precision.
 FocusScope {
     id: root
 
@@ -20,11 +20,6 @@ FocusScope {
     property bool hasMaximum: false
     property real minimum: 0
     property real maximum: 0
-    // Soft adjustment travel for scrub/slider. Never a legal-value bound.
-    property bool hasSoftMinimum: false
-    property bool hasSoftMaximum: false
-    property real softMinimum: 0
-    property real softMaximum: 0
     property real step: 0.01
     // -1 exposes enough significant digits for the stored value.
     property int decimals: -1
@@ -125,12 +120,8 @@ FocusScope {
         return effectiveStep;
     }
 
-    function clampToTravel(candidate) {
+    function clampToBounds(candidate) {
         var result = candidate;
-        if (hasSoftMinimum && result < softMinimum)
-            result = softMinimum;
-        if (hasSoftMaximum && result > softMaximum)
-            result = softMaximum;
         if (hasMinimum && result < minimum)
             result = minimum;
         if (hasMaximum && result > maximum)
@@ -175,7 +166,7 @@ FocusScope {
         if (!incrementSafe)
             return;
         var next = quantize(value + delta * incrementFor(modifiers));
-        stepped(clampToTravel(next));
+        stepped(clampToBounds(next));
     }
 
     function beginTextEdit() {
@@ -324,7 +315,7 @@ FocusScope {
                 root.scrubChanged = false;
                 root.scrubStarted();
             }
-            var candidate = root.quantize(root.clampToTravel(root.scrubOrigin + (mouse.x - pressX) * root.incrementFor(mouse.modifiers)));
+            var candidate = root.quantize(root.clampToBounds(root.scrubOrigin + (mouse.x - pressX) * root.incrementFor(mouse.modifiers)));
             if (candidate !== root.scrubOrigin)
                 root.scrubChanged = true;
             root.scrubPreview = candidate;

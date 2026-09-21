@@ -1,0 +1,124 @@
+{
+  "animationChannels": [],
+  "color": {
+    "deliveryTransform": "sRGB/rec709",
+    "viewerTransform": "sRGB/rec709",
+    "workingSpace": "linear"
+  },
+  "colorConfig": "../../issue12-view.ocio",
+  "format": "nemo",
+  "instances": [],
+  "mediaCatalog": {
+    "bins": [],
+    "entries": [],
+    "nextBinId": 1,
+    "nextEntryId": 1
+  },
+  "name": "Issue 103 grade-one",
+  "networks": [
+    {
+      "defaultOutput": 3,
+      "edges": [
+        {
+          "id": 1,
+          "from": {
+            "node": 1,
+            "port": 0
+          },
+          "to": {
+            "node": 2,
+            "port": 0
+          }
+        },
+        {
+          "id": 2,
+          "from": {
+            "node": 2,
+            "port": 0
+          },
+          "to": {
+            "node": 3,
+            "port": 0
+          }
+        }
+      ],
+      "id": 1,
+      "inputConnections": [],
+      "inputs": [],
+      "name": "Root",
+      "nextEdgeId": 3,
+      "nextInterfacePortId": 1,
+      "nextNodeId": 4,
+      "nodes": [
+        {
+          "id": 1,
+          "name": "Pattern",
+          "type": "testpattern",
+          "params": {},
+          "layout": {
+            "x": 100,
+            "y": 50
+          }
+        },
+        {
+          "id": 2,
+          "name": "Effect",
+          "type": "grade",
+          "params": {
+            "blackpoint": {
+              "type": "color",
+              "value": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "whitepoint": {
+              "type": "color",
+              "value": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "reverse": {
+              "type": "boolean",
+              "value": false
+            }
+          },
+          "layout": {
+            "x": 100,
+            "y": 150
+          }
+        },
+        {
+          "id": 3,
+          "name": "Output",
+          "type": "output",
+          "params": {},
+          "layout": {
+            "x": 100,
+            "y": 250
+          }
+        }
+      ],
+      "outputConnections": [],
+      "outputs": []
+    }
+  ],
+  "nextAnimationChannelId": 1,
+  "nextInstanceId": 1,
+  "nextKeyframeId": 1,
+  "nextNetworkId": 2,
+  "requiredFeatures": [
+    {
+      "id": "networks",
+      "version": 1
+    }
+  ],
+  "rootNetworkId": 1,
+  "schema": 4,
+  "sources": {}
+}

@@ -199,8 +199,8 @@ ColumnLayout {
     // The transform entries for the CURRENT mode, discovered by the delivery
     // adapter from the ACTIVE project config (the adapter caches one discovery
     // per project generation/config/mode, so an inspector revision never opens a
-    // config). Entries and a discovery failure are both stated locally: an empty
-    // list for a mode that needs one is shown with its reason, never silently.
+    // config). A discovery failure states itself through the transform cell's own
+    // tooltip; the inspector prints no paragraph for it.
     function refreshTransform() {
         var entries = [];
         var problem = "";
@@ -276,10 +276,6 @@ ColumnLayout {
     function choicesOf(key) {
         var entry = writeEditor.paramRow(key);
         return entry !== null && entry.choices ? entry.choices : [];
-    }
-
-    function ownsKey(key) {
-        return writeEditor.paramRows[key] !== undefined;
     }
 
     // The shared controls' optional wiring, read from the SAME queried row: the
@@ -413,10 +409,6 @@ ColumnLayout {
         return writeEditor.panel ? writeEditor.panel.cancelScrub(token) : false;
     }
 
-    // The most recent rejected edit attributed to one of the consumed keys. The
-    // message comes from the controller/catalog; this editor never re-validates.
-    readonly property string gestureProblem: writeEditor.panel && writeEditor.ownsKey(String(writeEditor.panel.gestureErrorKey)) ? String(writeEditor.panel.gestureError) : ""
-
     // --- the native output-path chooser -------------------------------------
     // The ONE native chooser the application owns, asked through the delivery
     // adapter for THIS node's identity. The chosen path is committed through the
@@ -456,14 +448,6 @@ ColumnLayout {
     }
     readonly property string jobState: writeEditor.job ? String(writeEditor.job.state) : ""
     readonly property bool jobActive: writeEditor.jobState === "queued" || writeEditor.jobState === "running"
-    readonly property string seamError: writeEditor.delivery ? String(writeEditor.delivery.error) : ""
-
-    // The seam's own last refusal (a submission, cancellation, forget or browse
-    // it could not answer). The editor raises none of its own: a request the
-    // seam refuses before any write arrives as the JOB's own failure below,
-    // naming the offending path, so nothing here repeats a preflight the seam
-    // owns.
-    readonly property string problemText: writeEditor.seamError
 
     function frameCount() {
         var first = writeEditor.numberValue("frameFirst");
@@ -666,8 +650,6 @@ ColumnLayout {
             text: writeEditor.valueTextOf(numberCell.cellKey)
             hasMinimum: false
             hasMaximum: false
-            hasSoftMinimum: false
-            hasSoftMaximum: false
             step: writeEditor.stepOf(numberCell.cellKey)
             integer: writeEditor.integerParameter(numberCell.cellKey)
             label: writeEditor.labelFor(numberCell.cellKey)
@@ -1062,20 +1044,6 @@ ColumnLayout {
         }
     }
 
-    // A discovery failure for the transform entry list is stated locally, never
-    // swallowed: an empty list under a mode that needs one must say why.
-    Text {
-        objectName: "writeTransformProblem_" + writeEditor.nodeId
-        visible: writeEditor.transformProblem.length > 0
-        Layout.fillWidth: true
-        Layout.leftMargin: writeEditor.labelWidth + writeEditor.rowSpacing
-        text: writeEditor.transformProblem
-        color: writeEditor.errorColor
-        font.pixelSize: writeEditor.smallFontSize
-        wrapMode: Text.WordWrap
-        Accessible.name: writeEditor.transformProblem
-    }
-
     // The optional LUT is applied after the base transform, to primary RGB only.
     // It is a path the artist states (or pastes); the seam validates and loads it
     // when the job runs, never here.
@@ -1180,7 +1148,9 @@ ColumnLayout {
 
     // --- job feedback -------------------------------------------------------
     // Cancellation, progress, the result and the failure, beneath the action that
-    // started the job. Every message is the seam's own.
+    // started the job. Every message is the seam's own. This is the ONLY inline
+    // text this editor prints: a rejection of an authored parameter reaches the
+    // field's own error affordance, and the seam's own refusals live on the seam.
     RowLayout {
         Layout.fillWidth: true
         spacing: writeEditor.rowSpacing
@@ -1218,17 +1188,6 @@ ColumnLayout {
     }
 
     Text {
-        objectName: "writeProblem_" + writeEditor.nodeId
-        visible: writeEditor.problemText.length > 0
-        Layout.fillWidth: true
-        text: writeEditor.problemText
-        color: writeEditor.errorColor
-        font.pixelSize: writeEditor.smallFontSize
-        wrapMode: Text.WordWrap
-        Accessible.name: writeEditor.problemText
-    }
-
-    Text {
         objectName: "writeFailure_" + writeEditor.nodeId
         visible: writeEditor.failureText().length > 0
         Layout.fillWidth: true
@@ -1237,17 +1196,5 @@ ColumnLayout {
         font.pixelSize: writeEditor.smallFontSize
         elide: Text.ElideRight
         Accessible.name: writeEditor.failureText()
-    }
-
-    Text {
-        objectName: "writeEditorError_" + writeEditor.nodeId
-        visible: writeEditor.gestureProblem.length > 0
-        Layout.fillWidth: true
-        text: writeEditor.gestureProblem
-        color: writeEditor.errorColor
-        font.pixelSize: writeEditor.smallFontSize
-        elide: Text.ElideRight
-        wrapMode: Text.WordWrap
-        Accessible.name: writeEditor.gestureProblem
     }
 }

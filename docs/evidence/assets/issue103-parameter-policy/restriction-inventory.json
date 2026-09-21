@@ -1,0 +1,723 @@
+{
+  "issue": 103,
+  "classification": "System extension of shared parameter authoring; prototype-port geometry/interaction preserved",
+  "nodes": {
+    "blur": {
+      "schemaSource": "src/nemo/nodes/blur/Contribution.cpp",
+      "params": [
+        {
+          "param": "size",
+          "type": "Float",
+          "hardBounds": "minimum 0; no authored maximum",
+          "nonzero": false,
+          "softTravel": "0..100",
+          "verdict": "arbitrary max removed; min semantic",
+          "source": "nodes/blur/Contribution.cpp + Parameters.hpp",
+          "note": "CPU and native execution resource admission is documented separately under blurExecution."
+        },
+        {
+          "param": "channels",
+          "type": "Choice",
+          "hardBounds": null,
+          "nonzero": false,
+          "softTravel": null,
+          "verdict": "identity",
+          "source": "nodes/blur/Contribution.cpp",
+          "note": ""
+        },
+        {
+          "param": "mix",
+          "type": "Float",
+          "hardBounds": "REMOVED [0,1] (shared helper)",
+          "nonzero": false,
+          "softTravel": "0..1",
+          "verdict": "arbitrary removed",
+          "source": "nodes/Common.hpp",
+          "note": ""
+        }
+      ],
+      "crossParameter": [
+        "channels must be RGBA/RGB/Alpha; declared port/ROI/resource admission unchanged"
+      ]
+    },
+    "constcolor": {
+      "schemaSource": "src/nemo/nodes/constcolor/Contribution.cpp",
+      "params": [
+        {
+          "param": "color",
+          "type": "Color",
+          "hardBounds": "none",
+          "nonzero": false,
+          "softTravel": "none",
+          "verdict": "no restriction",
+          "source": "nodes/constcolor/Contribution.cpp",
+          "note": "generic slider travel falls back to 0..1 (schema has neither soft nor hard) - sane for color"
+        }
+      ],
+      "crossParameter": []
+    },
+    "crop": {
+      "schemaSource": "src/nemo/nodes/crop/Contribution.cpp",
+      "params": [
+        {
+          "param": "x,y,right,top",
+          "type": "Float",
+          "hardBounds": "none",
+          "nonzero": false,
+          "softTravel": "none (x/y/right/top rows declare none)",
+          "verdict": "no restriction",
+          "source": "nodes/crop/Contribution.cpp",
+          "note": "representability guard |coord| <= kMaxDescribedCoordinate in Parameters.hpp"
+        },
+        {
+          "param": "softness",
+          "type": "Float",
+          "hardBounds": "min 0 (retained: inward ramp width; negative is meaningless)",
+          "nonzero": false,
+          "softTravel": "0..100 (ADDED, was hardcoded in CropBoxEditor.qml)",
+          "verdict": "semantic min + navigation soft",
+          "source": "nodes/crop/Contribution.cpp + Contribution.cpp:94",
+          "note": ""
+        },
+        {
+          "param": "reformat/intersect/blackOutside",
+          "type": "Boolean",
+          "hardBounds": null,
+          "nonzero": false,
+          "softTravel": null,
+          "verdict": "identity",
+          "source": "nodes/crop/Contribution.cpp",
+          "note": ""
+        }
+      ],
+      "crossParameter": [
+        "reformat with an empty floor/ceil enclosure is refused (would publish a zero-pixel format) - semantic",
+        "crop requires a connected image input and a known incoming format height - semantic",
+        "incoming image shorter than the box is NOT rejected (empty intersection is a valid transparent image)"
+      ]
+    },
+    "grade": {
+      "schemaSource": "src/nemo/nodes/grade/Contribution.cpp",
+      "params": [
+        {
+          "param": "blackpoint,whitepoint,lift,gain,multiply,offset,gamma",
+          "type": "Color",
+          "hardBounds": "none (soft travel only, unchanged)",
+          "nonzero": false,
+          "softTravel": "additive/multiplicative travel",
+          "verdict": "no hard bounds; retained execution admissibility",
+          "source": "nodes/grade/Contribution.cpp",
+          "note": ""
+        },
+        {
+          "param": "mix",
+          "type": "Float",
+          "hardBounds": "REMOVED [0,1] (shared helper)",
+          "nonzero": false,
+          "softTravel": "0..1",
+          "verdict": "arbitrary removed",
+          "source": "nodes/Common.hpp",
+          "note": ""
+        },
+        {
+          "param": "channels/reverse/clampBlack/clampWhite",
+          "type": "Choice/Boolean",
+          "hardBounds": null,
+          "nonzero": false,
+          "softTravel": null,
+          "verdict": "identity",
+          "source": "nodes/grade/Contribution.cpp",
+          "note": ""
+        }
+      ],
+      "crossParameter": [
+        "Enabled-channel gamma is finite and positive; coefficients/exponents must be representable.",
+        "For unequal endpoints, Reverse requires a nonzero slope; forward Multiply=0 remains valid.",
+        "At exact equal endpoints, Forward applies remaining Grade math to the shared value; Reverse returns that endpoint without dividing by slope. Clamps then Mask/Mix apply normally."
+      ]
+    },
+    "merge": {
+      "schemaSource": "src/nemo/nodes/merge/Contribution.cpp",
+      "params": [
+        {
+          "param": "operation",
+          "type": "Choice",
+          "hardBounds": null,
+          "nonzero": false,
+          "softTravel": null,
+          "verdict": "identity",
+          "source": "nodes/merge/Contribution.cpp",
+          "note": ""
+        },
+        {
+          "param": "mix",
+          "type": "Float",
+          "hardBounds": "REMOVED [0,1]",
+          "nonzero": false,
+          "softTravel": "0..1",
+          "verdict": "arbitrary removed",
+          "source": "nodes/merge/Contribution.cpp",
+          "note": ""
+        },
+        {
+          "param": "maskChannel,invertMask",
+          "type": "Choice/Boolean",
+          "hardBounds": null,
+          "nonzero": false,
+          "softTravel": null,
+          "verdict": "identity",
+          "source": "nodes/merge/Contribution.cpp",
+          "note": ""
+        }
+      ],
+      "crossParameter": [
+        "operation must be one of the five declared modes",
+        "A and B are required inputs (declared-port contract)"
+      ]
+    },
+    "output": {
+      "params": [],
+      "note": "no parameters at all - isOutput role only",
+      "crossParameter": []
+    },
+    "premult": {
+      "schemaSource": "src/nemo/nodes/premult/Contribution.cpp",
+      "params": [
+        {
+          "param": "multiply,by",
+          "type": "Choice",
+          "hardBounds": null,
+          "nonzero": false,
+          "softTravel": null,
+          "verdict": "identity",
+          "source": "nodes/premult/Contribution.cpp",
+          "note": ""
+        }
+      ],
+      "crossParameter": [
+        "both choices must be declared members (effectivePremult)"
+      ]
+    },
+    "reformat": {
+      "schemaSource": "src/nemo/nodes/reformat/Contribution.cpp",
+      "params": [
+        {
+          "param": "width,height,boxWidth,boxHeight",
+          "type": "Integer",
+          "hardBounds": "min 1 retained (positive whole-pixel dimension); no max in schema",
+          "nonzero": false,
+          "softTravel": "soft 1..8192 (width/height) and 1..4096 (boxW/H)",
+          "verdict": "semantic min, navigation soft",
+          "source": "nodes/reformat/Contribution.cpp:41-54",
+          "note": "execution also enforces <= kMaxDescribedCoordinate (representable pixel count)"
+        },
+        {
+          "param": "pixelAspect,boxPixelAspect",
+          "type": "Float",
+          "hardBounds": "min 0 retained + nonzero",
+          "nonzero": true,
+          "softTravel": "0.1..4",
+          "verdict": "semantic (finite positive aspect)",
+          "source": "nodes/reformat/Contribution.cpp:56-69",
+          "note": ""
+        },
+        {
+          "param": "scaleX,scaleY",
+          "type": "Float",
+          "hardBounds": "min 0 retained + nonzero",
+          "nonzero": true,
+          "softTravel": "0.01..4",
+          "verdict": "semantic (positive ratio with finite reciprocal)",
+          "source": "nodes/reformat/Contribution.cpp:70-84",
+          "note": "FLAGGED for owner: negative would be a mirror expressed by flip/flop"
+        },
+        {
+          "param": "type,formatSource,resize,filter,forceShape,center,flip,flop,turn,clamp,blackOutside,preserveBoundingBox",
+          "type": "Choice/Boolean",
+          "hardBounds": null,
+          "nonzero": false,
+          "softTravel": null,
+          "verdict": "identity",
+          "source": "nodes/reformat/Contribution.cpp",
+          "note": ""
+        }
+      ],
+      "crossParameter": [
+        "only the controls the selected `type` consumes are constrained (an unused authored value never rejects)",
+        "resolved non-positive output format / placement scale is refused (semantic)",
+        "filter sampling window must stay inside the integer index range (representation)"
+      ]
+    },
+    "roto": {
+      "schemaSource": "src/nemo/nodes/roto/Contribution.cpp + core/document/Roto.cpp",
+      "params": [
+        {
+          "param": "opacity (node)",
+          "type": "Float",
+          "hardBounds": "REMOVED both bounds",
+          "nonzero": false,
+          "softTravel": "0..1",
+          "verdict": "REMOVED both bounds (owner approved)",
+          "source": "nodes/roto/Contribution.cpp:103-121 + Parameters.hpp",
+          "note": "plain matte multiplier applied AFTER the fold; no clamp exists"
+        },
+        {
+          "param": "shutter",
+          "type": "Float",
+          "hardBounds": "max 1.0 REMOVED; min 0 retained (exposure LENGTH: zero closes it)",
+          "nonzero": false,
+          "softTravel": "0..1",
+          "verdict": "max REMOVED, min 0 retained (owner approved)",
+          "source": "nodes/roto/Contribution.cpp:141-161 + Parameters.hpp",
+          "note": "negative refused: symmetric midpoint rule selects the identical sample set"
+        },
+        {
+          "param": "samples",
+          "type": "Integer",
+          "hardBounds": "RETAINED [1,64]",
+          "nonzero": false,
+          "softTravel": "none (hard range is the travel)",
+          "verdict": "resource restriction RETAINED (owner approved)",
+          "source": "nodes/roto/Contribution.cpp:162-184 + ADR-0008:284-285",
+          "note": "retained by explicit owner approval; ADR-0008:284-285 records the original policy. Justification: heavy temporal effect, the count multiplies the pixel pass and the description pass, and core evaluation has no cancellation seam inside the sample loop"
+        },
+        {
+          "param": "outputChannel",
+          "type": "String",
+          "hardBounds": null,
+          "nonzero": false,
+          "softTravel": null,
+          "verdict": "semantic (empty name has no target)",
+          "source": "Parameters.hpp:105-110",
+          "note": ""
+        },
+        {
+          "param": "replace,invertMask",
+          "type": "Boolean",
+          "hardBounds": null,
+          "nonzero": false,
+          "softTravel": null,
+          "verdict": "identity",
+          "source": "nodes/roto/Contribution.cpp",
+          "note": ""
+        },
+        {
+          "param": "clip",
+          "type": "Choice",
+          "hardBounds": null,
+          "nonzero": false,
+          "softTravel": null,
+          "verdict": "identity",
+          "source": "Parameters.hpp:127",
+          "note": ""
+        },
+        {
+          "param": "maskChannel",
+          "type": "String",
+          "hardBounds": null,
+          "nonzero": false,
+          "softTravel": null,
+          "verdict": "semantic (exact stored channel name, `none` reserved)",
+          "source": "Parameters.hpp",
+          "note": ""
+        },
+        {
+          "param": "opacity (element/group)",
+          "type": "Float",
+          "hardBounds": "RETAINED [0,1]",
+          "nonzero": false,
+          "softTravel": "none (RotoController publishes hard only)",
+          "verdict": "RETAINED [0,1] (owner approved)",
+          "source": "core/document/Roto.cpp table + RotoTests.cpp:196-199",
+          "note": "operand of the documented coverage fold"
+        },
+        {
+          "param": "tension (point)",
+          "type": "Float",
+          "hardBounds": "RETAINED [0,1]",
+          "nonzero": false,
+          "softTravel": "none",
+          "verdict": "RETAINED [0,1] (owner approved, definitional)",
+          "source": "core/document/Roto.cpp + RotoTests.cpp:200-203",
+          "note": ""
+        },
+        {
+          "param": "featherFalloff (element)",
+          "type": "Float",
+          "hardBounds": "RETAINED (denorm_min, ..)",
+          "nonzero": false,
+          "softTravel": "none",
+          "verdict": "representation (1/falloff)",
+          "source": "core/document/Roto.cpp + ADR-0008",
+          "note": ""
+        },
+        {
+          "param": "translation,scale,pivot,rotation,feather,position,tangents,lifetime",
+          "type": "Vector2/Float",
+          "hardBounds": "none",
+          "nonzero": false,
+          "softTravel": "none",
+          "verdict": "no restriction",
+          "source": "core/document/Roto.cpp",
+          "note": ""
+        }
+      ],
+      "crossParameter": [
+        "rotoInteger: |value| <= 2^31-1 (representation)",
+        "matte extent must be representable (|coord| <= kMaxDescribedCoordinate) - description refuses, never truncates",
+        "geometry/resource admission retained: kMaxRotoGeometryWords, kMaxRotoItemsPerSample, kMaxRotoRasterScratchSamples, kMaxRotoVertices* (resource, not parameter bounds)"
+      ]
+    },
+    "shuffle": {
+      "schemaSource": "src/nemo/nodes/shuffle/Contribution.cpp",
+      "params": [
+        {
+          "param": "input1,input2,sourceKind{i},sourceChannel{i},outputChannel{i}",
+          "type": "Choice/String",
+          "hardBounds": null,
+          "nonzero": false,
+          "softTravel": null,
+          "verdict": "identity",
+          "source": "nodes/shuffle/Contribution.cpp",
+          "note": ""
+        }
+      ],
+      "crossParameter": [
+        "an enabled row with a B/A source must name a source channel",
+        "two enabled rows may not claim one output channel"
+      ]
+    },
+    "source": {
+      "schemaSource": "src/nemo/nodes/source/Contribution.cpp",
+      "params": [
+        {
+          "param": "frameStep",
+          "type": "Integer",
+          "hardBounds": "none in schema; nonzero retained",
+          "nonzero": true,
+          "softTravel": "none",
+          "verdict": "semantic (zero has no frame mapping)",
+          "source": "nodes/source/Contribution.cpp:64-68 + core/document/Document.cpp:1285 + evaluation/SourceRequest.cpp:318",
+          "note": ""
+        },
+        {
+          "param": "rangeFirst,rangeLast,frameOffset",
+          "type": "Integer",
+          "hardBounds": "none (FULL 64-bit range)",
+          "nonzero": false,
+          "softTravel": "none",
+          "verdict": "no restriction",
+          "source": "nodes/source/Contribution.cpp",
+          "note": "rangeFirst <= rangeLast and overflow are checked arithmetic, not bounds"
+        },
+        {
+          "param": "source, inputColorSpace",
+          "type": "String",
+          "hardBounds": null,
+          "nonzero": false,
+          "softTravel": null,
+          "verdict": "identity",
+          "source": "nodes/source/Contribution.cpp",
+          "note": ""
+        },
+        {
+          "param": "rangeMode,*Policy,inputTransform,alphaMode,sourceTransfer/Primaries/Matrix/Range/ChromaLocation",
+          "type": "Choice",
+          "hardBounds": null,
+          "nonzero": false,
+          "softTravel": null,
+          "verdict": "identity",
+          "source": "nodes/source/Contribution.cpp",
+          "note": ""
+        }
+      ],
+      "crossParameter": [
+        "rangeFirst <= rangeLast (SourceRequest:338)",
+        "checked 64-bit overflow in frame mapping (Document.cpp / SourceRequest.cpp)"
+      ]
+    },
+    "testpattern": {
+      "params": [],
+      "note": "no parameters",
+      "crossParameter": []
+    },
+    "unpremult": {
+      "schemaSource": "src/nemo/nodes/unpremult/Contribution.cpp",
+      "params": [
+        {
+          "param": "divide,by",
+          "type": "Choice",
+          "hardBounds": null,
+          "nonzero": false,
+          "softTravel": null,
+          "verdict": "identity",
+          "source": "nodes/unpremult/Contribution.cpp",
+          "note": ""
+        }
+      ],
+      "crossParameter": [
+        "both choices must be declared members (effectiveUnpremult)"
+      ]
+    },
+    "viewer": {
+      "params": [],
+      "note": "no parameters; display-only, no pixel adapter",
+      "crossParameter": []
+    },
+    "transform": {
+      "schemaSource": "src/nemo/nodes/transform/Contribution.cpp",
+      "params": [
+        {
+          "param": "translateX,translateY",
+          "type": "Float",
+          "hardBounds": "none",
+          "nonzero": false,
+          "softTravel": "-200..200",
+          "verdict": "no restriction; soft travel only",
+          "source": "nodes/transform/Contribution.cpp",
+          "note": ""
+        },
+        {
+          "param": "scale",
+          "type": "Float",
+          "hardBounds": "min 0 REMOVED; nonzero retained",
+          "nonzero": true,
+          "softTravel": "0.1..3",
+          "verdict": "arbitrary min removed (negative mirrors)",
+          "source": "nodes/transform/Contribution.cpp:52-65 + Parameters.hpp:21-30",
+          "note": "zero and non-finite reciprocal remain inadmissible"
+        },
+        {
+          "param": "rotate",
+          "type": "Float",
+          "hardBounds": "none",
+          "nonzero": false,
+          "softTravel": "-180..180",
+          "verdict": "no restriction",
+          "source": "nodes/transform/Contribution.cpp",
+          "note": ""
+        },
+        {
+          "param": "mix",
+          "type": "Float",
+          "hardBounds": "REMOVED [0,1] (shared helper)",
+          "nonzero": false,
+          "softTravel": "0..1",
+          "verdict": "arbitrary removed",
+          "source": "nodes/Common.hpp",
+          "note": ""
+        },
+        {
+          "param": "filter",
+          "type": "Choice",
+          "hardBounds": null,
+          "nonzero": false,
+          "softTravel": null,
+          "verdict": "identity",
+          "source": "nodes/transform/Contribution.cpp",
+          "note": ""
+        }
+      ],
+      "crossParameter": [
+        "read bound must be representable (|coord| <= kMaxDescribedCoordinate) else node-identifying failure",
+        "main-input pixel aspect must be finite and positive to bound the read"
+      ]
+    },
+    "write": {
+      "schemaSource": "src/nemo/nodes/write/Contribution.cpp",
+      "params": [
+        {
+          "param": "channels,fileType,precision,compression,profile,colorMode",
+          "type": "Choice",
+          "hardBounds": null,
+          "nonzero": false,
+          "softTravel": null,
+          "verdict": "identity",
+          "source": "nodes/write/Contribution.cpp",
+          "note": ""
+        },
+        {
+          "param": "frameFirst,frameLast,frameOffset",
+          "type": "Integer",
+          "hardBounds": "none",
+          "nonzero": false,
+          "softTravel": "none",
+          "verdict": "no restriction",
+          "source": "nodes/write/Contribution.cpp",
+          "note": ""
+        },
+        {
+          "param": "frameRate",
+          "type": "Float",
+          "hardBounds": "min 0 retained",
+          "nonzero": false,
+          "softTravel": "none",
+          "verdict": "semantic (a rate is not negative)",
+          "source": "nodes/write/Contribution.cpp:152-158",
+          "note": "media owner additionally requires >0 and <= kMaxFrameRate=1000 fps in src/nemo/media/DeliveryOutput.cpp:43,87"
+        },
+        {
+          "param": "bitrateKbps",
+          "type": "Integer",
+          "hardBounds": "min 0 retained",
+          "nonzero": false,
+          "softTravel": "none",
+          "verdict": "semantic",
+          "source": "nodes/write/Contribution.cpp:163-168",
+          "note": "media owner requires >= 1 kbps for mp4 (DeliveryOutput.cpp:96)"
+        },
+        {
+          "param": "file,outputTransform,lutFile",
+          "type": "String",
+          "hardBounds": null,
+          "nonzero": false,
+          "softTravel": null,
+          "verdict": "identity (delivery seam validates existence/extension)",
+          "source": "nodes/write/Contribution.cpp",
+          "note": ""
+        }
+      ],
+      "crossParameter": [
+        "delivery: file-type/extension match, profile per container, colorMode requires an output transform (media owners)"
+      ]
+    }
+  },
+  "sharedSchemaValidation": {
+    "note": "NodeCatalog is the shared numeric-policy owner; unchanged by this work, listed so the inventory is complete",
+    "descriptorRules": [
+      "hard range: finite, minimum <= maximum, numeric only, integer bounds integral",
+      "soft range: finite, ordered, inside the hard range, numeric only",
+      "nonzero numeric only; step finite and > 0 and numeric only",
+      "displayDecimals 0..9; choices non-empty and unique for Choice only; editor ids namespaced",
+      "initialValue only for scalar Integer/Float; label/section/row free of control characters",
+      "capabilities: sampling scales from {1,2,4} unique; quality modes Draft/Full unique; channel names non-empty and unique"
+    ],
+    "valueRules": [
+      "type identity; finite and float-representable; nonzero; inside the declared hard range; declared choice membership"
+    ],
+    "identityRules": [
+      "hard range, nonzero, default, choices, creation-time initial value and implementationVersion are implementation identity (NodeContributions::schemaMismatch) - this is why the schema changes required merge 4->5, transform 2->3, roto 1->2 and grade/blur 2->3"
+    ]
+  },
+  "crossParameterConstraints": {
+    "shared": [
+      "every effect declares the optional-mask contract (required image at port 0, optional mask at port 1); maskChannel is none/R/G/B/A and an absent mask is unlimited",
+      "mix is finite only (no range) and blends source + (effect - source) * mix; a connected mask contributes its clamped selected channel, optionally inverted"
+    ],
+    "blur": [
+      "size is a full-resolution support radius (>= 0); channels are RGBA/RGB/Alpha; the read demand is a halo of ceil(size/scale) samples with the mask read at output coordinates; geometry/raster admission unchanged"
+    ],
+    "grade": [
+      "Enabled-channel gamma is finite and positive; coefficients/exponents must be representable.",
+      "For unequal endpoints, Reverse requires a nonzero slope; forward Multiply=0 remains valid.",
+      "At exact equal endpoints, Forward applies remaining Grade math to the shared value; Reverse returns that endpoint without dividing by slope. Clamps then Mask/Mix apply normally."
+    ],
+    "crop": [
+      "requires a connected image input and a known incoming format height",
+      "the authored box must stay inside the representable coordinate domain (|coord| <= kMaxDescribedCoordinate)",
+      "reformat requires a non-empty floor/ceil enclosure or it would publish a zero-pixel format",
+      "an empty intersection stays a valid fully transparent image",
+      "softness is a ramp width: non-negative in the schema and re-checked by cropNumber"
+    ],
+    "merge": [
+      "operation must be a declared mode; A and B are required inputs (B is the main input); described bounds union the two inputs"
+    ],
+    "reformat": [
+      "only the controls the selected type consumes are constrained (an unused authored value never rejects)",
+      "the resize policy derives the canvas from the source; filter must be a declared name; the filter sampling window must land inside the int index range",
+      "a composition target needs the owning network's authored canvas; the main input must describe a pixel grid; a non-positive placement scale is refused"
+    ],
+    "roto": [
+      "rotoInteger accepts only |value| <= 2^31-1; outputChannel must name a channel",
+      "maskChannel is an exact stored channel name with `none` reserved; a missing channel on a connected mask contributes zero coverage before optional inversion",
+      "clip is one of format/bbox/union/intersect/none; a generator uses the canvas for bbox/union",
+      "the matte extent must be representable (|coord| <= kMaxDescribedCoordinate): refused, never truncated",
+      "geometry admission: kMaxRotoVerticesPerContour, kMaxRotoVerticesPerSample, kMaxRotoItemsPerSample, kMaxRotoGeometryWords, kMaxRotoRasterScratchSamples (resource, not parameter bounds)"
+    ],
+    "shuffle": [
+      "input1/input2 are B or A; sourceKind rows are input1/input2/zero/one; an enabled B/A row must name a source channel; no two enabled rows may claim one output channel; a disabled row is unvalidated by design"
+    ],
+    "source": [
+      "rangeFirst <= rangeLast; the frame mapping multiply/add is checked for 64-bit overflow; frameStep nonzero; media binding failures name the source key"
+    ],
+    "transform": [
+      "scale nonzero finite with a finite reciprocal (negative is the same map mirrored and is now authored state)",
+      "the main-input pixel aspect must be finite and positive to bound the read; the inverse-mapped read must be representable",
+      "Mix != 1 or a connected mask retains inherited data bounds, including extrapolation; signed scale uses absolute filter padding.",
+      "translate/rotate are unbounded; +-200 / +-180 is soft travel"
+    ],
+    "write": [
+      "file type is exr/mov/mp4; EXR compression must be in the closed inventory; a MOV profile must be declared; colorspace/display color modes require an output transform; a LUT extension needs a registered reader; mp4 requires bitrate >= 1 kbps; a movie frame rate must be finite, > 0 and (at the writer) a positive 32-bit rational; a movie cannot carry an alpha-only channel selection; a still pattern cannot name a multi-frame range and a movie pattern cannot name a sequence"
+    ],
+    "premult_unpremult": [
+      "both channel choices must be declared members"
+    ],
+    "none": [
+      "viewer, output, testpattern and constcolor declare no numeric parameter at all (only subject to the shared schema rules)"
+    ]
+  },
+  "ownerApprovedExceptions": [
+    "node Roto opacity: unbounded (approved)",
+    "Roto shutter: upper bound removed; min 0 retained (approved)",
+    "Roto samples [1,64]: retained (approved)",
+    "Roto element/group opacity [0,1]: retained (approved)",
+    "Roto point tension [0,1]: retained (approved)",
+    "Grade gamma finite > 0 and reverse nonzero slope: retained (approved)",
+    "Exact equal Grade endpoints: forward uses the shared endpoint as range-mapped value, then remaining math; Reverse returns the shared endpoint, then clamps and Mask/Mix.",
+    "CPU Blur weights table: 64 MiB execution budget, explicitly approved and reaffirmed after comparing 256/512 MiB; not image memory or authored radius.",
+    "Only explicit Write Render job progress/results/failures retain inline feedback."
+  ],
+  "reformatCanvasDomain": {
+    "statement": "reformat scaleX/scaleY are CANVAS DIMENSION multipliers (output = round(source * scale) in reformatOutputCanvas), not image transforms. A negative factor does not mirror: it drives the derived dimension below one pixel, which reformatRoundedDimension floors to the 1-pixel minimum - a silent 1x1 collapse. Mirroring is the separate flop/flip placement flags, which never change the canvas dimensions. So the retained rule is a representation constraint on a DERIVED PIXEL COUNT (finite, > 0, finite reciprocal), and it is the guard that keeps the floor from being reached. Transform's scale is different in kind: it is an affine factor of the inverse map where a negative value is a real mirror - hence its minimum was removed and Reformat's was not.",
+    "ownedDomains": [
+      "authored width/height/boxWidth/boxHeight: 1..kMaxDescribedCoordinate (requirePositiveDimension)",
+      "derived canvas dimensions: finite, |v| <= kMaxDescribedCoordinate, never below 1 pixel, then re-checked 1..kMaxDescribedCoordinate",
+      "pixel aspect: finite and > 0 for authored and resolved canvas alike (requirePositiveAspect)",
+      "filter sampling window: first/last/base must land inside the int index range (reformatSampleWindow)",
+      "composition target without the owning canvas, and a main input with no pixel grid: node-identifying refusal",
+      "resolved placement scale (gx/gy) non-positive: node-identifying refusal"
+    ]
+  },
+  "navigationPolicy": {
+    "NumericField": "Typing retains exact authored text; scrubbing and stepping apply only schema hard bounds. Soft travel never clamps or quantizes authored state.",
+    "ParameterSlider": "Navigation range includes authored out-of-travel values, is frozen during a drag, and handle drags apply relative deltas without snapping the source value.",
+    "customEditors": "Crop softness navigation and Roto master opacity adapters read schema metadata; registered numeric cells no longer bind removed NumericField soft-bound properties.",
+    "hardBounds": "Semantic/representation bounds remain authoritative; rejected edits preserve document/history and remain diagnosable through existing command/controller/evaluation owners."
+  },
+  "inlineErrorPolicy": {
+    "removed": [
+      "Generic numeric/non-numeric paragraphs",
+      "Channel error paragraph",
+      "Crop coordinate paragraph",
+      "Reformat edit/preset/discovery paragraphs",
+      "Roto aggregate paragraph",
+      "Shuffle edit/new-channel/discovery paragraphs",
+      "Read edit/discovery paragraphs",
+      "Write parameter/discovery/seam-refusal paragraphs",
+      "Subnet edit paragraph"
+    ],
+    "retained": "Existing numeric error borders/tooltips/accessibility; component-unavailable host states; explicit Write job feedback. No new notification surface.",
+    "diagnostics": "Read syntax errors use the existing shared rejectText/field affordance. Shuffle duplicate output rejection reaches authoritative effectiveShuffle, not a parallel QML validator."
+  },
+  "blurExecution": {
+    "authored": "Finite nonnegative radius, no upper parameter bound; navigation 0..100",
+    "support": "ceil(radius/samplingScale), actual float-payload roundtrip and signed integer weight-index check; no blanket 2^24 cutoff",
+    "halo": "int64 expansion, checked int Region edges/extents before conversion; demand clipped only to actual producer domain",
+    "native": "Existing device maxStorageBufferRange is supplied as GpuNodeContext::maxStorageBufferBytes; checked before host weights allocation and checked again by executor before device allocation",
+    "cpu": "64 MiB weights-table budget checked before allocation/tap loops; independent double-precision Gaussian weight calculation",
+    "cost": "In-budget requests can still be very expensive; no runtime cap was approved."
+  },
+  "deliveryFrameRate": {
+    "removed": "Arbitrary 1000 fps preflight ceiling and 90000 conversion bound",
+    "retained": "Finite positive authored rate; positive representable 32-bit rational at writer construction; real encoder/container admission",
+    "conversion": "av_d2q(rate, INT_MAX): FFmpeg documents max as maximum numerator AND denominator (libavutil/rational.h). Invalid rational is rejected before writer start opens the container. Source sample-aspect conversion is unchanged."
+  },
+  "outOfScopeNumericPolicy": [
+    "viewer/graph zoom and pan clamps (navigation)",
+    "CLI option ranges (ViewerCacheCommand 1..int max)",
+    "Workspace layout kMaxDepth",
+    "thumbnail scaling in MediaImportService",
+    "PPM encoding clamp in nemo-cli"
+  ],
+  "verification": "verification.json"
+}

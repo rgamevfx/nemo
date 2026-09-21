@@ -279,9 +279,15 @@ inline void requirePositiveAspect(const NodeInstance& node, const char* key, flo
         requirePositiveAspect(node, "boxPixelAspect", params.box.pixelAspect);
         break;
     case ReformatMode::Scale:
-        // A scale factors a whole-pixel canvas, so zero, negatives, and a
-        // reciprocal that overflows are inadmissible rather than silently
-        // collapsing the output.
+        // A scale is a CANVAS-DIMENSION multiplier, not a transform of the
+        // image: the output canvas is `source dimension * scale` rounded up to a
+        // whole pixel (see `reformatOutputCanvas`). A negative factor therefore
+        // does not mirror anything — it drives the derived dimension below one
+        // pixel, which the rounding floors to the 1-pixel minimum, i.e. a silent
+        // collapse of the canvas. Mirroring an image is `flop`/`flip`, which the
+        // placement policy applies on top. Zero, negatives and a reciprocal that
+        // overflows are inadmissible for that reason (retained under issue #103
+        // as a representation constraint on the canvas, not a slider range).
         if (!std::isfinite(params.scaleX) || !(params.scaleX > 0.0F) || !std::isfinite(1.0F / params.scaleX) ||
             !std::isfinite(params.scaleY) || !(params.scaleY > 0.0F) || !std::isfinite(1.0F / params.scaleY)) {
             failNode(node, "parameters 'scaleX'/'scaleY' must be finite and positive with finite reciprocals");
@@ -399,8 +405,9 @@ inline void reformatPlacementScale(ReformatResize resize, const ReformatCanvas& 
     }
     if (output.width < 1 || output.height < 1 || output.width > kMaxDescribedCoordinate ||
         output.height > kMaxDescribedCoordinate) {
-        failNode(node, "reformat resolved a non-positive output format (" + std::to_string(output.width) + "x" +
-                           std::to_string(output.height) + ")");
+        failNode(node, "reformat resolved an output format outside the canvas domain (1.." +
+                           std::to_string(kMaxDescribedCoordinate) + " pixels per axis), got " +
+                           std::to_string(output.width) + "x" + std::to_string(output.height));
     }
     requirePositiveAspect(node, "pixelAspect", output.pixelAspect);
     return output;

@@ -178,6 +178,28 @@ TEST_P(RotoRaster, MotionBlurSamplesCompletedHierarchyAndOneSampleDisablesIt) {
     EXPECT_FLOAT_EQ(render().pixel(4, 8)[3], 1.0F);
 }
 
+TEST_P(RotoRaster, NodeOpacityAndShutterUseValuesBeyondNavigationTravel) {
+    RotoData shapes;
+    const auto shape = rectangle(shapes, 0, 0, 4, 16);
+    shapes.elements.push_back(shape);
+    submit(setRotoDataCommand(network, node, shapes));
+    const ParameterAddress address{network, node, "translation", 0, shape.id, 0};
+    submit(setKeyframesCommand({{address, Keyframe{.time = -1, .value = Vector2Value{{0, 0}}}},
+                                {address, Keyframe{.time = 1, .value = Vector2Value{{8, 0}}}}}));
+    submit(setParamCommand(network, node, "samples", std::int64_t{2}));
+    submit(setParamCommand(network, node, "shutter", 2.0));
+    // The midpoint samples translate the rectangle by 2 and 6 pixels.
+    // Pixel 2 is covered only by the first sample; a shutter capped at 1
+    // would sample translations 3 and 5 and leave it uncovered.
+    EXPECT_FLOAT_EQ(render().pixel(2, 8)[3], 0.5F);
+    submit(setParamCommand(network, node, "opacity", 2.0));
+    EXPECT_FLOAT_EQ(render().pixel(2, 8)[3], 1.0F);
+    submit(setParamCommand(network, node, "opacity", -2.0));
+    const auto negative = render();
+    EXPECT_FLOAT_EQ(negative.pixel(2, 8)[3], -1.0F);
+    EXPECT_FLOAT_EQ(negative.pixel(12, 8)[3], 0.0F);
+}
+
 TEST_P(RotoRaster, NamedOutputPreservesBackgroundAndInputMask) {
     auto background = std::make_shared<NodeId>();
     auto mask = std::make_shared<NodeId>();

@@ -25,6 +25,7 @@
 #include "Workspace.hpp"
 #include "WorkspaceController.hpp"
 
+#include "nemo/core/commands/NetworkCommands.hpp"
 #include "nemo/core/document/Document.hpp"
 #include "nemo/core/document/Serialization.hpp"
 #include "nemo/core/evaluation/ViewerResolution.hpp"
@@ -1282,6 +1283,68 @@ TEST_F(ReadViewerSurface, ViewerWheelZoomIsContinuousAnchoredAndReversible) {
     EXPECT_NEAR(state.value(QStringLiteral("zoom")).toDouble(), settled.scale(), 0.05)
         << "the settled view is what the project records";
     capture(QStringLiteral("viewer-zoom-burst-settled"));
+    EXPECT_EQ(warnings_->count(), 0);
+}
+
+TEST_F(ReadViewerSurface, ResizingAutoViewerChangesDisplayAndRangeCacheDensity) {
+    // A wide plate makes width drive Fit even on a 720-pixel-high desktop.
+    window_->resize(1280, 680);
+    ASSERT_TRUE(session_
+                    ->submit(nemo::setNetworkFormatCommand(static_cast<nemo::NetworkId>(rootNetwork().toULongLong()),
+                                                           nemo::ImageFormat{2160, 540, 1.0F}),
+                             {.expectedRevision = session_->revision()})
+                    .committed);
+    const auto color = controller_->createGraphNode(rootNetwork(), QStringLiteral("constcolor"),
+                                                    QStringLiteral("Plate"), 0.0, 0.0, {}, {});
+    controller_->setNodeParameter(color, QStringLiteral("color"), QVariantList{1.0, 0.0, 0.0, 1.0});
+    const auto viewer = controller_->createGraphNode(rootNetwork(), QStringLiteral("viewer"), QStringLiteral("Viewer1"),
+                                                     40.0, 120.0, {}, {});
+    ASSERT_TRUE(controller_->connectOrReplaceGraph(rootNetwork(), color, 0, viewer, 0));
+    const bool fullReady = waitForRequest([](const nemo::EvaluationRequest& request) {
+        return request.region.width == 2160 && request.region.height == 540 && request.samplingScale == 1;
+    });
+    capture(QStringLiteral("issue106-auto-large"));
+    ASSERT_TRUE(fullReady) << controller_->error().toStdString() << " scale=" << presentedRequest().samplingScale
+                           << " region=" << presentedRequest().region.width << 'x' << presentedRequest().region.height
+                           << " status=" << controller_->status().toStdString();
+    ASSERT_TRUE(waitFor([&] { return controller_->cachePublished() >= 1; }));
+
+    const auto beforeResize = controller_->cachePublished();
+    window_->resize(960, 640);
+    ASSERT_TRUE(waitForRequest([](const nemo::EvaluationRequest& request) {
+        return request.region.width == 2160 && request.region.height == 540 && request.samplingScale == 2;
+    })) << controller_->error().toStdString();
+    EXPECT_EQ(controller_->presentation()->frame.width, 1080);
+    EXPECT_EQ(controller_->presentation()->frame.height, 270);
+    ASSERT_TRUE(waitFor([&] { return controller_->cachePublished() > beforeResize; }));
+    capture(QStringLiteral("issue106-auto-small"));
+
+    // Explicit range construction uses the same current viewport demand.
+    const auto beforeRange = controller_->completed();
+    controller_->requestRange(1, 2);
+    ASSERT_TRUE(waitFor([&] { return controller_->completed() >= beforeRange + 2 && controller_->cacheQueued() == 0; }))
+        << controller_->cacheError().toStdString();
+    controller_->setFrame(1);
+    ASSERT_TRUE(waitForRequest([](const nemo::EvaluationRequest& request) {
+        return request.localTime == 1 && request.samplingScale == 2;
+    })) << controller_->error().toStdString();
+    EXPECT_TRUE(controller_->presentation()->cacheHit);
+    EXPECT_EQ(controller_->presentation()->frame.width, 1080);
+    EXPECT_EQ(controller_->presentation()->frame.height, 270);
+    const auto image = grabImageArea();
+    ASSERT_FALSE(image.isNull());
+    EXPECT_GT(countPixelsNear(image, {255, 0, 0}, 12), image.width() * image.height() / 4);
+    capture(QStringLiteral("issue106-auto-small-range-replay"));
+
+    // Growing must likewise reject the smaller range representation.
+    window_->resize(1280, 680);
+    ASSERT_TRUE(waitForRequest([](const nemo::EvaluationRequest& request) {
+        return request.localTime == 1 && request.samplingScale == 1;
+    })) << controller_->error().toStdString();
+    EXPECT_EQ(controller_->presentation()->frame.width, 2160);
+    EXPECT_EQ(controller_->presentation()->frame.height, 540);
+    capture(QStringLiteral("issue106-auto-grown"));
+    EXPECT_EQ(controller_->cacheErrors(), 0U);
     EXPECT_EQ(warnings_->count(), 0);
 }
 

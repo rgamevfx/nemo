@@ -604,7 +604,8 @@ void ViewerRuntime::executeReplay(const Pending& pending, eval::ViewerSession& s
     // The admission-time revision travels with the unit and IS the snapshot's
     // identity, so the retained record is validated without fingerprinting the
     // document again on an ordinary playback tick.
-    auto frame = session.replay(pending.intent(), pending.revision, pending.destination);
+    auto frame =
+        session.replay(pending.intent(), pending.revision, resolution_[pending.destination], pending.destination);
     if (!frame) {
         publishReplay(ViewerReplayMiss{pending.intent().localTime, pending.id}, pending);
         return;

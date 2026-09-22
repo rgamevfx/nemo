@@ -1,0 +1,64 @@
+{
+  "issue": 106,
+  "classification": "system-extension regression correction",
+  "status": "locally verified",
+  "root_cause": "The frame-record fallback resolved Auto view intents at the cached record's sampling scale, allowing cached density to override a changed viewport.",
+  "correction": "Render and replay resolve changed intents through the same retained per-destination ViewerResolutionPolicy using validated frame descriptions. Exact unchanged-intent replay remains graph-free. Existing ROI, force-full-frame coverage, explicit resolution modes and Auto hysteresis are unchanged.",
+  "api_changes": [
+    "ViewerSession::replay(ViewIntent, revision, resolution, destination) now requires the destination's existing ViewerResolutionPolicy.",
+    "Removed the obsolete resolveViewDemand fixed-density entry point; resolveViewIntent owns all demand arithmetic."
+  ],
+  "red_green": {
+    "test": "ViewerCache.AutoViewportResizeKeepsDisplayAndReplayAtTheRequestedDensity",
+    "before": "Shrinking a 64x48 view to 8x6 incorrectly replayed and displayed a 64x48 cached raster at scale 1 instead of 16x12 at scale 4; six assertions failed.",
+    "after": "Passes, including added checks for retained Auto hysteresis and reuse of the original larger cached sibling."
+  },
+  "passed_tests": [
+    "ViewerCache.AutoViewportResizeKeepsDisplayAndReplayAtTheRequestedDensity",
+    "ViewerCache.ReplaySeamServesKnownFramesAndNeverRendersUnknownOnes",
+    "ViewerCache.ReplayPresentsTheSameDisplayAsTheLiveFrame",
+    "ViewerCache.OddSizedRegionsReplayAtTheirExactRequestedExtent",
+    "ViewerViewIntent.ResolvesTheDescribedFrameLayerAndCoverage",
+    "ReadViewerSurface.ViewerViewDrivesTheRequestRegionAndSampling",
+    "ReadViewerSurface.ForceFullFrameCoversTheWholeDomainAndKeepsTheView",
+    "ReadViewerSurface.ResizingAutoViewerChangesDisplayAndRangeCacheDensity"
+  ],
+  "native_scenario": {
+    "platform": "Wayland",
+    "renderer": "Qt Quick Vulkan",
+    "qt": "6.4.2",
+    "source": "command-authored 2160x540 constcolor graph, using the existing generated-frame native verification seam",
+    "large_raster": [2160, 540],
+    "small_raster": [1080, 270],
+    "requested_cache_range": [1, 2],
+    "replayed_frame": 1,
+    "replayed_raster": [1080, 270],
+    "replay_cache_hit": true,
+    "grown_frame_1_raster": [2160, 540],
+    "cache_errors": 0,
+    "qml_warnings": 0,
+    "pixel_check": "Native window grab contains the expected red image after range-cache replay; cached and grown captures visually inspected.",
+    "captures": [
+      "issue106-auto-large.png",
+      "issue106-auto-small.png",
+      "issue106-auto-small-range-replay.png",
+      "issue106-auto-grown.png"
+    ],
+    "geometry": "Corresponding environment-*.json files record actual compositor-constrained geometry and sampling scale."
+  },
+  "build": {
+    "command": "cmake --build --preset debug --target nemo_viewer_tests nemo_workspace_ui_tests nemo-ui -j2",
+    "result": "succeeded",
+    "warning": "Existing minizip-ng linker warning about mktemp."
+  },
+  "native_environment": {
+    "QT_QPA_PLATFORM": "wayland",
+    "QSG_RHI_BACKEND": "vulkan",
+    "WAYLAND_DISPLAY": "wayland-1",
+    "NEMO_TEST_NATIVE_UI": "1",
+    "NEMO_TEST_VIEWER_WINDOW": "1",
+    "NEMO74_EVIDENCE_DIR": "capture destination"
+  },
+  "verification_scope": "Focused GPU and native checks only; no repeat full suite, release or sanitizer run. No changes to QML geometry, gestures, full-frame coverage semantics, resolution thresholds or pre-existing user edits.",
+  "out_of_scope_observation": "Attempts to use literal plate.####.png and plate.####.exr paths in the native Read fixture failed to open those pattern paths. Sequence-path behavior was not diagnosed or changed; final native range verification uses the existing generated-frame seam. The GPU session regression uses real decoded clip media."
+}

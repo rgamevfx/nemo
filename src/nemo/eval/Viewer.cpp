@@ -67,18 +67,6 @@ constexpr std::size_t kIsolatedViewRoles = 3;
     return description.pixelAspect > 0.0F ? static_cast<double>(description.pixelAspect) : 1.0;
 }
 
-// A declared resolution mode names its own sampling density; only Auto leaves
-// the density to the panel's retained hysteresis. The mapping belongs to the
-// resolution policy owner, which consults no state at all for a declared mode,
-// so a throwaway instance is an honest query rather than a second table.
-[[nodiscard]] int declaredSamplingScale(const ViewerResolution mode, const ImageDescription& description) {
-    if (mode == ViewerResolution::Auto)
-        return 0;
-    const ViewerResolutionPolicy stateless;
-    return stateless.resolve(mode, description.format.width, description.format.height, demandPixelAspect(description),
-                             0.0, 0.0, 1.0);
-}
-
 }  // namespace
 
 ViewerProjection resolveViewerProjection(const std::vector<std::string>& requested,
@@ -308,7 +296,8 @@ std::string ViewerSession::frameRecordKey(const EvaluationRequest& request) {
 
 std::optional<ViewerSession::FrameMatch> ViewerSession::frameRecordForIntent(const ViewIntent& intent,
                                                                              const std::uint64_t revision,
-                                                                             const std::string& colorIdentity) const {
+                                                                             const std::string& colorIdentity,
+                                                                             ViewerResolutionPolicy& resolution) const {
     EvaluationRequest identity;
     identity.network = intent.network;
     identity.output = intent.target;
@@ -317,15 +306,9 @@ std::optional<ViewerSession::FrameMatch> ViewerSession::frameRecordForIntent(con
     if (!known)
         return std::nullopt;
     const FrameRecord& record = **known;
-    // A declared mode names its own density, so a representation at another one
-    // is not this view's representation; only Auto leaves the density to the
-    // validated record.
-    const int declared = declaredSamplingScale(intent.mode, record.description);
-    if (declared != 0 && declared != record.request.samplingScale)
-        return std::nullopt;
     ResolvedView view;
     try {
-        view = resolveViewDemand(intent, record.description, record.request.samplingScale);
+        view = resolveViewIntent(intent, record.description, resolution);
     } catch (const ViewUnavailable&) {
         return std::nullopt;
     }
@@ -436,8 +419,8 @@ ViewerSession::RequestTicket ViewerSession::beginRequest(const Document& documen
 }
 
 std::optional<ViewerFrame> ViewerSession::replay(const ViewIntent& intent, const std::uint64_t snapshotRevision,
-                                                 ViewerDestination destination) {
-    // Read-only: the caller's snapshot revision and the colour configuration
+                                                 ViewerResolutionPolicy& resolution, ViewerDestination destination) {
+    // Replay-only: the caller's snapshot revision and the colour configuration
     // decide whether this session still knows what the demand resolved to, and
     // the cache alone decides whether its representation can be served yet. The
     // document is never fingerprinted here, so a playback tick costs no document
@@ -458,7 +441,7 @@ std::optional<ViewerFrame> ViewerSession::replay(const ViewIntent& intent, const
     // for the equivalent view without describing or planning anything. A view
     // this frame does not satisfy stays a miss, so a neighbour is never filled
     // by a render.
-    if (const auto frameMatch = frameRecordForIntent(intent, ticket.revision, colorIdentity)) {
+    if (const auto frameMatch = frameRecordForIntent(intent, ticket.revision, colorIdentity, resolution)) {
         if (const std::optional<ViewerFrame> frame =
                 serveRecorded(*frameMatch->record, ticket, frameMatch->presentationChannel))
             return frame;
@@ -490,7 +473,11 @@ ViewerSession::ViewingState& ViewerSession::viewingStateFor(const ColorPolicy& p
     return viewing_.emplace(key, ViewingState{std::move(program), std::move(identity), {}}).first->second;
 }
 
-ResolvedView resolveViewDemand(const ViewIntent& intent, const ImageDescription& description, const int samplingScale) {
+ResolvedView resolveViewIntent(const ViewIntent& intent, const ImageDescription& description,
+                               ViewerResolutionPolicy& resolution) {
+    const int samplingScale =
+        resolution.resolve(intent.mode, description.format.width, description.format.height,
+                           demandPixelAspect(description), intent.viewportWidth, intent.viewportHeight, intent.zoom);
     ResolvedView view;
     EvaluationRequest& request = view.request;
     request.network = intent.network;
@@ -579,16 +566,6 @@ ResolvedView resolveViewDemand(const ViewIntent& intent, const ImageDescription&
     return view;
 }
 
-ResolvedView resolveViewIntent(const ViewIntent& intent, const ImageDescription& description,
-                               ViewerResolutionPolicy& resolution) {
-    // The panel's retained hysteresis decides the density; everything else about
-    // the demand is the shared arithmetic above.
-    const int samplingScale =
-        resolution.resolve(intent.mode, description.format.width, description.format.height,
-                           demandPixelAspect(description), intent.viewportWidth, intent.viewportHeight, intent.zoom);
-    return resolveViewDemand(intent, description, samplingScale);
-}
-
 ViewerFrame ViewerSession::render(const Document& document, const ViewIntent& intent,
                                   ViewerResolutionPolicy& resolution, std::uint64_t timeout_ns,
                                   std::uint64_t generation, ViewerDestination destination,
@@ -610,7 +587,7 @@ ViewerFrame ViewerSession::render(const Document& document, const ViewIntent& in
         if (const std::optional<ViewerFrame> frame = serveRecorded(**known, ticket, (*known)->presentationChannel))
             return *frame;
     }
-    if (const auto frameMatch = frameRecordForIntent(intent, ticket.revision, colorIdentity)) {
+    if (const auto frameMatch = frameRecordForIntent(intent, ticket.revision, colorIdentity, resolution)) {
         if (const std::optional<ViewerFrame> frame =
                 serveRecorded(*frameMatch->record, ticket, frameMatch->presentationChannel))
             return *frame;

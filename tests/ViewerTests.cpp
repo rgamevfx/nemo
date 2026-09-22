@@ -2503,6 +2503,61 @@ TEST(ViewerCache, ValidFrameStillLoadingIsNotAMiss) {
     expectValidationClean(*boot.instance);
 }
 
+TEST(ViewerCache, AutoViewportResizeKeepsDisplayAndReplayAtTheRequestedDensity) {
+    const auto boot = createBootstrap();
+    NEMO_SKIP_UNLESS_SLANG(boot);
+    const auto configPath = writeColorConfig();
+    const test::ScopedEnvironment ocio("OCIO", configPath.string());
+    TaggedClip clip(AV_PIX_FMT_YUV444P, {126});
+    const auto composition = makeSourceComposition("plate", SourceReference{clip.path.string()}, false);
+    CacheDirectory directory;
+    eval::ViewerSession session(*boot.instance, *boot.device, *boot.allocator, slangSpvDir());
+    session.configureCache(directory.options());
+    ViewerResolutionPolicy resolution;
+    eval::ViewIntent intent{.network = composition.doc.rootNetworkId(),
+                            .target = resolveOutput(composition.doc, composition.doc.rootNetworkId()),
+                            .viewportWidth = 64,
+                            .viewportHeight = 48};
+    const auto full = session.render(composition.doc, intent, resolution);
+    ASSERT_EQ(full.layout.width, 64);
+    ASSERT_EQ(full.layout.height, 48);
+    session.flushCache();
+
+    // The same fitted image still covers its whole domain, but this smaller
+    // viewer needs quarter-density pixels, not the old full-density cache.
+    intent.viewportWidth = 8;
+    intent.viewportHeight = 6;
+    EXPECT_FALSE(session.replay(intent, composition.doc.stateRevision(), resolution).has_value());
+    const auto small = retryWhilePreparing([&] { return session.render(composition.doc, intent, resolution); });
+    EXPECT_EQ(small.request.samplingScale, 4);
+    EXPECT_EQ(small.layout.width, 16);
+    EXPECT_EQ(small.layout.height, 12);
+    session.flushCache();
+    const auto cached = session.replay(intent, composition.doc.stateRevision(), resolution);
+    ASSERT_TRUE(cached.has_value());
+    ASSERT_TRUE(cached->replay);
+    EXPECT_EQ(cached->replay->image.extent().width, 16U);
+    EXPECT_EQ(cached->replay->image.extent().height, 12U);
+
+    // A new viewport inside Auto's hysteresis band retains quarter density.
+    // A fresh/stateless policy would incorrectly demand half density here.
+    intent.viewportWidth = 16;
+    intent.viewportHeight = 12;
+    const auto stable = session.replay(intent, composition.doc.stateRevision(), resolution);
+    ASSERT_TRUE(stable.has_value());
+    EXPECT_EQ(stable->request.samplingScale, 4);
+
+    // A different density does not discard a valid sibling representation.
+    intent.viewportWidth = 64;
+    intent.viewportHeight = 48;
+    const auto restored = session.replay(intent, composition.doc.stateRevision(), resolution);
+    ASSERT_TRUE(restored.has_value());
+    ASSERT_TRUE(restored->replay);
+    EXPECT_EQ(restored->replay->image.extent().width, 64U);
+    EXPECT_EQ(restored->replay->image.extent().height, 48U);
+    expectValidationClean(*boot.instance);
+}
+
 // Acceptance example 5's other half: the replay-only seam the playback window
 // uses serves a demand this session already resolved, and a frame it never
 // resolved is NOT replayable — it is never rendered to fill the window.
@@ -2526,17 +2581,17 @@ TEST(ViewerCache, ReplaySeamServesKnownFramesAndNeverRendersUnknownOnes) {
     // Nothing has been resolved yet, and a replay-only call never resolves:
     // no graph work happens for either frame.
     const auto idle = session.reuseCounts();
-    EXPECT_FALSE(session.replay(intentFor(0), composition.doc.stateRevision()).has_value());
-    EXPECT_FALSE(session.replay(intentFor(1), composition.doc.stateRevision()).has_value());
+    ViewerResolutionPolicy resolution;
+    EXPECT_FALSE(session.replay(intentFor(0), composition.doc.stateRevision(), resolution).has_value());
+    EXPECT_FALSE(session.replay(intentFor(1), composition.doc.stateRevision(), resolution).has_value());
     EXPECT_EQ(session.reuseCounts(), idle) << "the replay seam never enters the graph";
 
-    ViewerResolutionPolicy resolution;
     const auto live = session.render(composition.doc, intentFor(0), resolution);
     ASSERT_FALSE(live.cacheHit);
     ASSERT_TRUE(live.image);
     session.flushCache();
 
-    const auto replay = session.replay(intentFor(0), composition.doc.stateRevision());
+    const auto replay = session.replay(intentFor(0), composition.doc.stateRevision(), resolution);
     ASSERT_TRUE(replay.has_value());
     ASSERT_TRUE(replay->replay);
     EXPECT_FALSE(replay->image);
@@ -2546,7 +2601,7 @@ TEST(ViewerCache, ReplaySeamServesKnownFramesAndNeverRendersUnknownOnes) {
     // The neighbour was never resolved, so it is simply not replayable — and
     // the probe still did no work rather than rendering it.
     const auto beforeNeighbour = session.reuseCounts();
-    EXPECT_FALSE(session.replay(intentFor(1), composition.doc.stateRevision()).has_value());
+    EXPECT_FALSE(session.replay(intentFor(1), composition.doc.stateRevision(), resolution).has_value());
     EXPECT_EQ(session.reuseCounts(), beforeNeighbour);
     expectValidationClean(*boot.instance);
 }

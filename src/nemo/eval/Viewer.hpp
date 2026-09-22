@@ -173,8 +173,8 @@ public:
     // running. It never describes, plans, evaluates or encodes — a neighbour
     // whose representation is not already validated and ready is simply not
     // replayable, so a speculative frame can never pull the heavy graph in
-    // behind a playback tick. Nonblocking on any thread; see the declaration
-    // above for the exact answers.
+    // behind a playback tick. Nonblocking; callers serialize access to their
+    // destination's resolution policy.
     //
     // `snapshotRevision` is `Document::stateRevision()` of the immutable
     // document snapshot this demand belongs to, computed once by the owner of
@@ -182,7 +182,11 @@ public:
     // identity here — never a scheduler id or a request generation — so an
     // ordinary playback tick never fingerprints the document again, and the
     // served frame reports exactly this revision.
+    // `resolution` is the destination's retained Auto policy, as for render:
+    // cached frame metadata may resolve a new view, but cached density never
+    // overrides its current viewport demand.
     [[nodiscard]] std::optional<ViewerFrame> replay(const ViewIntent& intent, std::uint64_t snapshotRevision,
+                                                    ViewerResolutionPolicy& resolution,
                                                     ViewerDestination destination = ViewerDestination::Interactive);
     // Replay a previously resolved concrete headless demand under the same
     // immutable stamp. Like the view-intent form, this never receives or plans
@@ -269,12 +273,12 @@ private:
     // (network, target, local time). The frame identity is the one both render
     // paths share, so a frame first visited through the concrete-request path —
     // an explicitly populated cache range — is already the frame an equivalent
-    // view asks for: the intent is resolved against the stored description at
-    // the record's own density (pure arithmetic, no graph description, no
-    // planning) and served when the two agree. While the snapshot and colour
-    // stamps are unchanged a matching record IS the resolution, so an ordinary
-    // playback tick looks the representation up instead of describing and
-    // planning the graph again. Any edit moves the document stamp and the demand
+    // view asks for: the intent is resolved against the stored description and
+    // destination's current density policy (pure arithmetic, no graph description
+    // or planning) and served only when coverage and sampling agree.
+    // With unchanged snapshot and colour stamps, an exact-intent record is
+    // authoritative; ordinary playback needs no graph description or planning.
+    // Any edit moves the document stamp and the demand
     // is resolved again from the current snapshot, which recomputes the effective
     // key: an unchanged key still hits the frame the cache holds while unrelated
     // valid siblings stay eligible, so a stale session-wide stamp or a naked
@@ -311,19 +315,14 @@ private:
     // It carries no destination, because what a frame IS does not depend on
     // which panel or which range fill asked for it.
     [[nodiscard]] static std::string frameRecordKey(const EvaluationRequest& request);
-    // The frame's own validated record when the view asks for exactly what it
-    // holds: the intent is resolved against the stored description with the
-    // SAME demand arithmetic the render path uses, at the record's own density,
-    // so only an equivalent demand can be served from it. An empty channel
-    // demand is compared as the set it means (every channel the image names), so
-    // a frame filled by a concrete request that named no channels matches the
-    // view that names exactly those channels. An explicit resolution mode must
-    // agree with the recorded density; an Auto view accepts the validated
-    // representation, which is why returning to a frame never refines it. A view
-    // that addresses nothing this frame carries is NOT served here: the caller's
-    // cold path reports that with a fresh description the panel can adopt.
+    // Match a frame record against the current view using the same description
+    // and destination sampling policy as the render path. This needs no graph
+    // work, but a cached density cannot override a changed viewport or zoom.
+    // Empty channels mean all described channels. Unavailable views miss here
+    // so the cold path can report them with a fresh description.
     [[nodiscard]] std::optional<FrameMatch> frameRecordForIntent(const ViewIntent& intent, std::uint64_t revision,
-                                                                 const std::string& colorIdentity) const;
+                                                                 const std::string& colorIdentity,
+                                                                 ViewerResolutionPolicy& resolution) const;
     // The record for `key` when it is still validated against this document
     // snapshot and colour configuration; otherwise nothing and the caller
     // resolves the demand again. Records are immutable and shared, so a lookup
